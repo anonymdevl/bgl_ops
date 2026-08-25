@@ -58,8 +58,10 @@ fixtures = [
         "Salary Slip - Betonsa", "Betonsa Leave Application Form",
         "Payroll Management Report - Adenta", "Payroll Management Report - Tema",
         "SSNIT 5.5% & 13% Report", "SSNIT 5% & 13.5% Report",
+        "BGL Trip Costing", "BGL Trips - Yesterday",
     ]]]},
     {"dt": "Letter Head", "filters": [["name", "in", ["Betonsa"]]]},
+    {"dt": "Auto Email Report", "filters": [["name", "in", ["BGL Trips - Yesterday"]]]},
     {"dt": "Number Card", "filters": [["name", "in", [
         "Trips This Month", "Cubic This Month (m3)", "Trip Pay This Month (GHS)",
         "Active Loans & Advances", "Money Owed to Company (GHS)",

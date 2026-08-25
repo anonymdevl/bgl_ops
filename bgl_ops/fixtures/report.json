@@ -7,7 +7,7 @@
   "report_type": "Query Report",
   "is_standard": "No",
   "disabled": 0,
-  "query": "SELECT dtl.payroll_month AS \"Month:Data:80\", dtl.branch AS \"Site:Data:80\", dtl.pay_group AS \"Pay Group:Data:120\", dtl.employee AS \"Employee:Link/Employee:110\", dtl.employee_name AS \"Name:Data:150\", dtl.unit AS \"Unit:Data:60\", SUM(dtl.quantity) AS \"Qty:Float:80\", dtl.salary_component AS \"Component:Link/Salary Component:170\", SUM(dtl.amount) AS \"Amount:Currency:110\" FROM `tabDaily Trip Log` dtl WHERE dtl.docstatus = 1 AND dtl.pulled_to_payroll = 0 GROUP BY dtl.payroll_month, dtl.employee, dtl.salary_component ORDER BY dtl.branch, dtl.pay_group, dtl.employee_name",
+  "query": "SELECT\n    DATE_FORMAT(MIN(dtl.log_date), '%%M %%Y') AS \"Month::110\",\n    dtl.branch AS \"Site::75\",\n    dtl.pay_group AS \"Pay Group::115\",\n    dtl.employee AS \"Employee:Link/Employee:105\",\n    dtl.employee_name AS \"Name::150\",\n    CONCAT(LPAD(DAY(MIN(dtl.log_date)),2,'0'), ' - ', LPAD(DAY(MAX(dtl.log_date)),2,'0')) AS \"Dates::80\",\n    COUNT(DISTINCT dtl.log_date) AS \"Days:Int:55\",\n    dtl.unit AS \"Unit::55\",\n    SUM(dtl.quantity) AS \"Qty:Float:70\",\n    dtl.salary_component AS \"Component:Link/Salary Component:165\",\n    SUM(dtl.amount) AS \"Amount:Currency:105\"\nFROM `tabDaily Trip Log` dtl\nWHERE dtl.docstatus = 1\n  AND dtl.log_date BETWEEN %(from_date)s AND %(to_date)s\n  AND (%(site)s = 'All' OR dtl.branch = %(site)s)\n  AND ( (%(scope)s = 'Unpaid for Payroll' AND dtl.pulled_to_payroll = 0)\n     OR %(scope)s = 'All Submitted' )\nGROUP BY DATE_FORMAT(dtl.log_date, '%%Y-%%m'), dtl.employee, dtl.salary_component\nORDER BY DATE_FORMAT(dtl.log_date, '%%Y-%%m'), dtl.branch, dtl.pay_group, dtl.employee_name",
   "roles": [
    {
     "role": "System Manager"
@@ -17,6 +17,43 @@
    },
    {
     "role": "HR User"
+   }
+  ],
+  "add_total_row": 1,
+  "filters": [
+   {
+    "fieldname": "from_date",
+    "label": "From Date",
+    "fieldtype": "Date",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "default": "Today"
+   },
+   {
+    "fieldname": "to_date",
+    "label": "To Date",
+    "fieldtype": "Date",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "default": "Today"
+   },
+   {
+    "fieldname": "site",
+    "label": "Site",
+    "fieldtype": "Select",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "All\nAirport\nTema",
+    "default": "All"
+   },
+   {
+    "fieldname": "scope",
+    "label": "Scope",
+    "fieldtype": "Select",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "Unpaid for Payroll\nAll Submitted",
+    "default": "Unpaid for Payroll"
    }
   ]
  },
@@ -28,7 +65,7 @@
   "report_type": "Query Report",
   "is_standard": "No",
   "disabled": 0,
-  "query": "SELECT dtl.branch AS \"Site:Data:90\", dtl.pay_group AS \"Pay Group:Data:120\", dtl.employee_name AS \"Driver / Operator:Data:170\", dtl.unit AS \"Unit:Data:60\", dtl.quantity AS \"Qty:Float:80\", dtl.amount AS \"Amount:Currency:110\", dtl.truck_no AS \"Truck:Data:90\" FROM `tabDaily Trip Log` dtl WHERE dtl.docstatus = 1 AND dtl.log_date = CURDATE() - INTERVAL 1 DAY ORDER BY dtl.branch, dtl.pay_group, dtl.employee_name",
+  "query": "SELECT\n    DATE_FORMAT(dtl.log_date, '%%W, %%d %%M %%Y') AS \"Date::170\",\n    dtl.branch AS \"Site::75\",\n    dtl.pay_group AS \"Pay Group::115\",\n    dtl.employee_name AS \"Driver / Operator::160\",\n    dtl.truck_no AS \"Vehicle::80\",\n    dtl.day_type AS \"Day::75\",\n    dtl.unit AS \"Unit::55\",\n    dtl.quantity AS \"Qty:Float:65\",\n    dtl.rate_applied AS \"Rate:Currency:75\",\n    dtl.amount AS \"Amount:Currency:100\"\nFROM `tabDaily Trip Log` dtl\nWHERE dtl.docstatus = 1\n  AND dtl.log_date = CURDATE() - INTERVAL 1 DAY\nORDER BY dtl.branch, dtl.pay_group, dtl.employee_name",
   "roles": [
    {
     "role": "System Manager"
@@ -39,7 +76,8 @@
    {
     "role": "HR User"
    }
-  ]
+  ],
+  "add_total_row": 1
  },
  {
   "doctype": "Report",

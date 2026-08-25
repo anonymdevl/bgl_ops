@@ -19,6 +19,7 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 	page.set_primary_action('Load Sheet', load_sheet);
 	var save_btn = page.set_secondary_action('Save Drafts', save_drafts);
 	page.add_inner_button('Submit Month (lock)', submit_month);
+	page.add_inner_button('Print Sheet', print_sheet);
 
 	var body = $('<div class="tls-body"></div>').appendTo(page.main);
 	$('<style>\
@@ -123,6 +124,53 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 				holder.find('input.q.dirty').removeClass('dirty');
 			}
 		});
+	}
+
+	function print_sheet() {
+		if (!state.sheet) { frappe.msgprint('Load a sheet first.'); return; }
+		var d = state.sheet, sat = {}, sun = {};
+		(d.saturdays || []).forEach(function(x) { sat[x] = 1; });
+		(d.sundays || []).forEach(function(x) { sun[x] = 1; });
+		var h = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Trip Sheet ' + d.site + ' ' + d.month + '</title><style>' +
+			'@page{size:A3 landscape;margin:8mm}' +
+			'body{font-family:Arial,Helvetica,sans-serif;color:#000;font-size:9px;margin:0}' +
+			'.hd{text-align:center;font-weight:bold;font-size:15px;border:1px solid #000;background:#eee;padding:4px;margin-bottom:2px}' +
+			'.sub{text-align:center;font-size:10px;margin-bottom:6px}' +
+			'table{border-collapse:collapse;width:100%}' +
+			'th,td{border:0.5pt solid #000;padding:2px 3px;text-align:center}' +
+			'th{background:#eee;font-size:8px}' +
+			'td.nm{text-align:left;white-space:nowrap;font-weight:bold}' +
+			'td.gp{text-align:left;font-size:7.5px;color:#444}' +
+			'td.tot{font-weight:bold;background:#f4f4f4}' +
+			'.sig{margin-top:16px;font-size:10px;display:flex;justify-content:space-between}' +
+			'.sig span{border-top:1px solid #000;padding-top:3px;width:30%;text-align:center}' +
+			'</style></head><body>' +
+			'<div class="hd">BETONSA GHANA LIMITED - DAILY TRIP / CUBIC SHEET</div>' +
+			'<div class="sub">Branch: <b>' + d.site + '</b> | Month: <b>' + d.month + '</b> | Printed: ' + new Date().toLocaleString() + '</div>' +
+			'<table><thead><tr><th style="text-align:left">NAME</th><th>VEHICLE</th>';
+		for (var i = 1; i <= d.days; i++) { h += '<th>' + i + (sat[i] ? '<br>S' : (sun[i] ? '<br>Su' : '')) + '</th>'; }
+		h += '<th>TOTAL</th></tr></thead><tbody>';
+		var grand = 0;
+		d.employees.forEach(function(e) {
+			var tot = 0;
+			h += '<tr><td class="nm">' + e.employee_name + '<div class="gp">' + e.designation + '</div></td>';
+			var trk = holder.find('input.trkin[data-emp="' + e.name + '"]').val();
+			h += '<td>' + (trk || e.truck_no || '') + '</td>';
+			for (var day = 1; day <= d.days; day++) {
+				var v = parseFloat(holder.find('input.q[data-emp="' + e.name + '"][data-day="' + day + '"]').val()) || 0;
+				tot += v;
+				h += '<td>' + (v || '') + '</td>';
+			}
+			grand += tot;
+			h += '<td class="tot">' + (tot || '') + '</td></tr>';
+		});
+		h += '<tr><td class="tot" style="text-align:right" colspan="' + (d.days + 2) + '">GRAND TOTAL</td><td class="tot">' + grand + '</td></tr>';
+		h += '</tbody></table>' +
+			'<div class="sig"><span>PREPARED BY</span><span>CHECKED BY (HR)</span><span>APPROVED BY MANAGING DIRECTOR</span></div>' +
+			'</body></html>';
+		var w = window.open('', '_blank');
+		w.document.write(h); w.document.close();
+		setTimeout(function() { w.print(); }, 400);
 	}
 
 	function submit_month() {

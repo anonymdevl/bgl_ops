@@ -1,0 +1,16 @@
+[
+ {
+  "doctype": "Auto Email Report",
+  "name": "BGL Trips - Yesterday",
+  "report": "BGL Trips - Yesterday",
+  "report_type": "Query Report",
+  "user": "Administrator",
+  "enabled": 1,
+  "send_if_data": 1,
+  "no_of_rows": 200,
+  "email_to": "ismail@betonsa.com.gh",
+  "frequency": "Daily",
+  "format": "HTML",
+  "description": "Previous day's driver trips and cubic across Airport and Tema, sent each morning."
+ }
+]

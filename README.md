@@ -33,6 +33,18 @@ NOTES
 - The BGL Trip Rate seed data (the confirmed rates) lives in the SITE, not in
   fixtures, by design: rates are operational data HR maintains.
 
+## SITE-RESIDENT INVENTORY (deliberate, not in fixtures)
+These live only in the site database. They are SAFE across migrate/update
+(sync never deletes records it does not own), but a from-scratch rebuild
+would need them recreated:
+- BGL Vehicle doctype + vehicle records (kept out of fixtures so doctype
+  re-import can never wipe the table)
+- BGL Trip Rate naming rule (live site uses format:RATE-{group}-{site}-...;
+  fixtures still say hash - do not "fix" this, see doctype.json warning)
+- Workspace Sidebar icons and items for BGL Operations
+- All operational data: trip rates, trip logs, loans, encash requests,
+  vehicles - protected by database backups, as data should be.
+
 ## Install
     cd frappe-bench
     bench get-app /path/to/bgl_ops      # or a git URL

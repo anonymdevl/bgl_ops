@@ -111,8 +111,8 @@
   .bars{display:flex;flex-direction:column;gap:10px}
   .bar{display:grid;grid-template-columns:110px 1fr 56px;align-items:center;gap:10px;font-size:12.5px}
   .bar .nm{color:var(--muted)}
-  .bar .t{height:20px;background:var(--bg2);border-radius:7px;overflow:hidden}
-  .bar .f{height:100%;border-radius:7px;background:linear-gradient(90deg,var(--amber),var(--amber2));
+  .bar .t{display:block;height:20px;background:var(--bg2);border-radius:7px;overflow:hidden}
+  .bar .f{display:block;height:100%;border-radius:7px;background:linear-gradient(90deg,var(--amber),var(--amber2));
     box-shadow:0 0 14px rgba(240,160,75,.35);transition:width .7s cubic-bezier(.2,.7,.3,1)}
   .bar .v{text-align:right;font-weight:700;font-family:'Space Grotesk'}
 
@@ -189,9 +189,9 @@
   <div class="tabs" id="tabs">
     <button class="tab on" data-v="overview">Overview</button>
     <button class="tab" data-v="trips">Trips &amp; Cubic</button>
-    <button class="tab" data-v="sheet">Log Sheet</button>
     <button class="tab" data-v="loans">Loans &amp; Advances</button>
     <button class="tab" data-v="leave">Leave</button>
+    <button class="tab" data-v="sheet">Log Sheet</button>
   </div>
 </div></header>
 
@@ -286,6 +286,7 @@
         <span class="spacer" style="flex:1"></span>
         <button class="btn btn-p" id="sh-save" disabled>Save Drafts</button>
         <button class="btn btn-g" id="sh-submit" disabled>Submit Month (lock)</button>
+        <button class="btn btn-g" id="sh-print" disabled>Print Sheet</button>
       </div>
       <div class="sheetwrap"><table class="sheet" id="sheet"><tbody>
         <tr><td class="empty" style="padding:16px">Choose a site and month, then Load Sheet.</td></tr>
@@ -421,11 +422,27 @@
   var IC_MOON='<svg width="28" height="28" viewBox="0 0 24 24" fill="rgba(154,150,232,.28)" stroke="#9a96e8" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
   el('greet-ic').innerHTML = h<12 ? IC_SUN : (h<17 ? IC_DUSK : IC_MOON);
   var tabs=document.querySelectorAll('.tab');
-  tabs.forEach(function(t){ t.addEventListener('click', function(){
-    tabs.forEach(function(x){ x.classList.remove('on'); }); t.classList.add('on');
+  function showTab(name){
+    var ok=false;
+    tabs.forEach(function(x){ var on=x.dataset.v===name; x.classList.toggle('on',on); if(on) ok=true; });
+    if(!ok){ name='overview'; tabs[0].classList.add('on'); }
     document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('on'); });
-    el('v-'+t.dataset.v).classList.add('on');
+    el('v-'+name).classList.add('on');
+  }
+  tabs.forEach(function(t){ t.addEventListener('click', function(){
+    showTab(t.dataset.v);
+    history.replaceState(null,'','#'+t.dataset.v);
   });});
+  function handleHash(){
+    var hh=location.hash.substring(1).toLowerCase();
+    if(hh==='sheet-airport'||hh==='sheet-tema'){
+      showTab('sheet');
+      el('sh-site').value = hh==='sheet-airport' ? 'Airport' : 'Tema';
+      el('sh-load').click();
+    } else if(hh){ showTab(hh); }
+  }
+  if(location.hash){ handleHash(); }
+  addEventListener('hashchange', handleHash);
 
   // ============ dashboard ============
   var CREW={};
@@ -502,7 +519,7 @@
       if(tr.length){
         var tmax=1; tr.forEach(function(r){ if(r.amt>tmax) tmax=r.amt; });
         el('trend').innerHTML=tr.map(function(r){
-          var hpx=Math.max(4, Math.round(r.amt/tmax*80));
+          var hpx=Math.max(6, Math.round(r.amt/tmax*80));
           return '<div class="tb" style="height:'+hpx+'px" data-t="'+esc(r.d)+': GHS '+fmt(r.amt)+' ('+fmt(r.qty)+' qty)"></div>'; }).join('');
       }
       var rows=d.month_by_site_group||[];
@@ -600,10 +617,58 @@
   el('sh-month').value = new Date().toISOString().slice(0,7);
   function markDirty(){ el('sh-save').disabled = !Object.keys(DIRTY).length && !Object.keys(TRUCKS).length; }
 
+  function printSheet(){
+    if(!SHEET) return;
+    var d=SHEET, sat={}, sun={};
+    d.saturdays.forEach(function(x){ sat[x]=1; }); d.sundays.forEach(function(x){ sun[x]=1; });
+    var h='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Trip Sheet '+d.site+' '+d.month+'</title><style>'+
+      '@page{size:A3 landscape;margin:8mm}'+
+      'body{font-family:Arial,Helvetica,sans-serif;color:#000;font-size:9px;margin:0}'+
+      '.hd{text-align:center;font-weight:bold;font-size:15px;border:1px solid #000;background:#eee;padding:4px;margin-bottom:2px}'+
+      '.sub{text-align:center;font-size:10px;margin-bottom:6px}'+
+      'table{border-collapse:collapse;width:100%}'+
+      'th,td{border:0.5pt solid #000;padding:2px 3px;text-align:center}'+
+      'th{background:#eee;font-size:8px}'+
+      'td.nm{text-align:left;white-space:nowrap;font-weight:bold}'+
+      'td.gp{text-align:left;font-size:7.5px;color:#444}'+
+      'td.tot{font-weight:bold;background:#f4f4f4}'+
+      '.sig{margin-top:16px;font-size:10px;display:flex;justify-content:space-between}'+
+      '.sig span{border-top:1px solid #000;padding-top:3px;width:30%;text-align:center}'+
+      '</style></head><body>'+
+      '<div class="hd">BETONSA GHANA LIMITED - DAILY TRIP / CUBIC SHEET</div>'+
+      '<div class="sub">Branch: <b>'+d.site+'</b> &nbsp;|&nbsp; Month: <b>'+d.month+'</b> &nbsp;|&nbsp; Printed: '+new Date().toLocaleString()+'</div>'+
+      '<table><thead><tr><th style="text-align:left">NAME</th><th>VEHICLE</th>';
+    for(var i=1;i<=d.days;i++){ h+='<th>'+i+(sat[i]?'<br>S':(sun[i]?'<br>Su':''))+'</th>'; }
+    h+='<th>TOTAL</th></tr></thead><tbody>';
+    var grand=0;
+    d.employees.forEach(function(e){
+      var tot=0;
+      h+='<tr><td class="nm">'+e.employee_name+'<div class="gp">'+e.designation+'</div></td>';
+      var trk=document.querySelector('input.trkin[data-emp="'+e.name+'"]');
+      h+='<td>'+((trk&&trk.value)||e.truck_no||'')+'</td>';
+      for(var day=1;day<=d.days;day++){
+        var inp=document.querySelector('input.q[data-emp="'+e.name+'"][data-day="'+day+'"]');
+        var v=inp? (parseFloat(inp.value)||0) : 0;
+        tot+=v;
+        h+='<td>'+(v||'')+'</td>';
+      }
+      grand+=tot;
+      h+='<td class="tot">'+(tot||'')+'</td></tr>';
+    });
+    h+='<tr><td class="tot" style="text-align:right" colspan="'+(d.days+2)+'">GRAND TOTAL</td><td class="tot">'+grand+'</td></tr>';
+    h+='</tbody></table>'+
+      '<div class="sig"><span>PREPARED BY</span><span>CHECKED BY (HR)</span><span>APPROVED BY MANAGING DIRECTOR</span></div>'+
+      '</body></html>';
+    var w=window.open('','_blank');
+    w.document.write(h); w.document.close();
+    setTimeout(function(){ w.print(); }, 400);
+  }
+  el('sh-print').addEventListener('click', printSheet);
+
   el('sh-load').addEventListener('click', function(){
     DIRTY={}; TRUCKS={}; markDirty();
     api('bulk_sheet', {site: el('sh-site').value, month: el('sh-month').value}, function(d){
-      SHEET=d; renderSheet(d); el('sh-submit').disabled=false;
+      SHEET=d; renderSheet(d); el('sh-submit').disabled=false; el('sh-print').disabled=false;
       toast(d.employees.length+' employees loaded for '+d.site+' '+d.month);
     });
   });
