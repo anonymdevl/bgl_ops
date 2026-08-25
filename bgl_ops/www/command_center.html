@@ -19,6 +19,14 @@
     --panelgrad:linear-gradient(165deg,rgba(26,33,48,.82),rgba(20,26,35,.9));
     --fxop:.85; --vig:radial-gradient(ellipse 120% 100% at 50% 30%,transparent 55%,rgba(5,7,10,.55) 100%);
   }
+  html[data-theme="light"] .fx .aur{
+    background:radial-gradient(closest-side,rgba(194,97,12,.16),transparent 65%),
+               radial-gradient(closest-side at 30% 60%,rgba(13,125,132,.13),transparent 60%),
+               radial-gradient(closest-side at 72% 55%,rgba(91,87,184,.12),transparent 60%)}
+  html[data-theme="light"] .fx .aur2{
+    background:radial-gradient(closest-side,rgba(13,125,132,.12),transparent 65%)}
+  html[data-theme="light"] .fx .beam{
+    background:radial-gradient(ellipse at 50% 0%,rgba(194,97,12,.18),transparent 70%)}
   html[data-theme="light"]{
     --bg:#eef1f5; --bg2:#e4e9ef; --panel:#ffffff; --panel2:#f3f5f9; --line:#d7dde7;
     --ink:#171b21; --muted:#5b6473; --faint:#8b94a1;
@@ -31,7 +39,7 @@
     --sh:0 1px 2px rgba(23,27,33,.06),0 8px 26px rgba(23,27,33,.09);
     --hdr:rgba(238,241,245,.86);
     --panelgrad:linear-gradient(165deg,#ffffff,#fafbfd);
-    --fxop:.4; --vig:radial-gradient(ellipse 120% 100% at 50% 30%,transparent 60%,rgba(23,27,33,.08) 100%);
+    --fxop:.75; --vig:radial-gradient(ellipse 120% 100% at 50% 30%,transparent 60%,rgba(23,27,33,.08) 100%);
   }
   *{box-sizing:border-box}
   html,body{height:100%}
@@ -100,6 +108,18 @@
   .kpi .val{font-family:'Space Grotesk','Inter',sans-serif;font-size:31px;font-weight:700;margin:8px 0 2px;line-height:1}
   .kpi .s2{font-size:12px;color:var(--faint)}
   .kpi .s2 b{color:var(--good)}
+  a.kpi,a.panelink{display:block;color:inherit;text-decoration:none;cursor:pointer;transition:transform .15s,border-color .15s}
+  a.kpi:hover{transform:translateY(-2px);border-color:var(--amber)}
+  a.kpi::before{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;
+    background:linear-gradient(90deg,transparent,var(--amber),transparent);opacity:0;transition:opacity .15s}
+  a.kpi:hover::before{opacity:1}
+  .fbar{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:0 0 16px;
+    background:var(--panelgrad);border:1px solid var(--line);border-radius:14px;padding:11px 14px;box-shadow:var(--sh)}
+  .fbar select,.fbar input[type=date]{background:var(--bg2);border:1px solid var(--line);color:var(--ink);
+    border-radius:9px;padding:6px 10px;font:inherit;font-size:13px}
+  .fbar .flabel{font-size:12px;color:var(--faint);font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+  .fbar .plabel{margin-left:auto;font-size:12.5px;color:var(--muted)}
+  .fbar .plabel b{color:var(--amber)}
 
   .grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:15px}
   @media(max-width:860px){.grid2{grid-template-columns:1fr}}
@@ -157,6 +177,15 @@
   .empty{color:var(--faint);font-size:13px;padding:8px 0}
   .note{font-size:12.5px;color:var(--faint);margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
   .note b{color:var(--muted)}
+  .foot-line{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:14px;
+    padding-top:12px;color:var(--faint);font-size:clamp(10px,0.95vw,12.5px);white-space:nowrap}
+  .foot-line span{white-space:nowrap}
+  .foot-sep{color:var(--line)}
+  @media(max-width:900px){
+    .foot-line{flex-direction:column;gap:4px;white-space:normal;font-size:12px}
+    .foot-line span{white-space:normal;text-align:center}
+    .foot-sep{display:none}
+  }
 
   /* ---- log sheet ---- */
   .sheetbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
@@ -223,21 +252,39 @@
   <h1 id="greet"><span id="greet-txt">Good day, {{ full_name }}</span> <span id="greet-ic" style="vertical-align:-2px;margin-left:4px"></span></h1>
   <p class="sub" id="dateline">Loading live figures...</p>
 
+  <div class="fbar">
+    <span class="flabel">Period</span>
+    <select id="f-preset">
+      <option value="mtd" selected>This month</option>
+      <option value="today">Today</option>
+      <option value="yesterday">Yesterday</option>
+      <option value="week">This week</option>
+      <option value="lastmonth">Last month</option>
+      <option value="ytd">This year</option>
+      <option value="custom">Custom range...</option>
+    </select>
+    <input type="date" id="f-from" style="display:none">
+    <input type="date" id="f-to" style="display:none">
+    <span class="flabel" style="margin-left:6px">Site</span>
+    <select id="f-site"><option>All</option><option>Airport</option><option>Tema</option></select>
+    <span class="plabel" id="f-label"></span>
+  </div>
+
   <!-- ============ OVERVIEW ============ -->
   <section class="view on" id="v-overview">
     <div class="kpis">
-      <div class="kpi"><div class="ic i-a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
+      <a class="kpi" id="card-crew"><div class="ic i-a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
         <div class="lab">Field crew</div><div class="val" id="k-crew">-</div>
-        <div class="s2"><span id="k-crew2">-</span></div></div>
+        <div class="s2"><span id="k-crew2">-</span></div></a>
       <div class="kpi"><div class="ic i-t"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 9h1m4 0h1M9 13h1m4 0h1M9 17h1m4 0h1"/></svg></div>
         <div class="lab">Active sites</div><div class="val" id="k-sites">2</div>
         <div class="s2" id="k-sites2">-</div></div>
-      <div class="kpi"><div class="ic i-v"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg></div>
+      <a class="kpi" id="card-owing"><div class="ic i-v"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg></div>
         <div class="lab">Staff owing (payroll)</div><div class="val" id="k-owing">-</div>
-        <div class="s2" id="k-owing2">-</div></div>
-      <div class="kpi"><div class="ic i-g"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 20A7 7 0 0 1 4 13c0-5 4-9 10-10 3-.5 6 0 6 0s.5 3 0 6c-1 6-5 10-10 10z"/></svg></div>
+        <div class="s2" id="k-owing2">-</div></a>
+      <a class="kpi" id="card-onleave"><div class="ic i-g"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 20A7 7 0 0 1 4 13c0-5 4-9 10-10 3-.5 6 0 6 0s.5 3 0 6c-1 6-5 10-10 10z"/></svg></div>
         <div class="lab">On leave today</div><div class="val" id="k-onleave">-</div>
-        <div class="s2" id="k-onleave2">-</div></div>
+        <div class="s2" id="k-onleave2">-</div></a>
     </div>
 
     <div class="grid2">
@@ -259,19 +306,19 @@
   <!-- ============ TRIPS ============ -->
   <section class="view" id="v-trips">
     <div class="kpis">
-      <div class="kpi"><div class="ic i-a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
-        <div class="lab">Trips this month</div><div class="val" id="t-trips">-</div><div class="s2" id="t-trips2">-</div></div>
-      <div class="kpi"><div class="ic i-t"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8l-9-5-9 5v8l9 5 9-5z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg></div>
-        <div class="lab">Cubic this month (m3)</div><div class="val" id="t-cubic">-</div><div class="s2" id="t-cubic2">-</div></div>
-      <div class="kpi"><div class="ic i-v"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg></div>
-        <div class="lab">Logs today</div><div class="val" id="t-today">-</div><div class="s2" id="t-today2">-</div></div>
-      <div class="kpi"><div class="ic i-g"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg></div>
-        <div class="lab">Pay earned (GHS)</div><div class="val" id="t-pay">-</div><div class="s2">this month, trips + cubic</div></div>
+      <a class="kpi" id="card-trips"><div class="ic i-a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
+        <div class="lab">Trips</div><div class="val" id="t-trips">-</div><div class="s2" id="t-trips2">-</div></a>
+      <a class="kpi" id="card-cubic"><div class="ic i-t"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8l-9-5-9 5v8l9 5 9-5z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg></div>
+        <div class="lab">Cubic (m3)</div><div class="val" id="t-cubic">-</div><div class="s2" id="t-cubic2">-</div></a>
+      <a class="kpi" id="card-today"><div class="ic i-v"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg></div>
+        <div class="lab">Logs today</div><div class="val" id="t-today">-</div><div class="s2" id="t-today2">-</div></a>
+      <a class="kpi" id="card-pay"><div class="ic i-g"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg></div>
+        <div class="lab">Pay earned (GHS)</div><div class="val" id="t-pay">-</div><div class="s2">this month, trips + cubic</div></a>
     </div>
 
     <div class="grid2">
       <div class="panel">
-        <h3>Last 14 days</h3><p class="cap">Daily trip and cubic pay (GHS) - hover for detail</p>
+        <h3 id="trend-title">Daily pay in period</h3><p class="cap">Trip and cubic pay per day (GHS) - hover for detail</p>
         <div class="trend" id="trend"><div class="empty">Populates once daily logging begins - use the Log Sheet tab.</div></div>
       </div>
       <div class="panel">
@@ -322,14 +369,14 @@
   <!-- ============ LOANS ============ -->
   <section class="view" id="v-loans">
     <div class="kpis">
-      <div class="kpi"><div class="ic i-v"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg></div>
-        <div class="lab">Ledger balance (GHS)</div><div class="val" id="l-bal">-</div><div class="s2" id="l-bal2">-</div></div>
-      <div class="kpi"><div class="ic i-a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V10M19 21V10M3 10h18M5 6l7-3 7 3M9 14v3M15 14v3"/></svg></div>
-        <div class="lab">Loans (payroll)</div><div class="val" id="l-loanamt">-</div><div class="s2" id="l-loanamt2">-</div></div>
-      <div class="kpi"><div class="ic i-t"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
-        <div class="lab">Advances (payroll)</div><div class="val" id="l-advamt">-</div><div class="s2" id="l-advamt2">-</div></div>
-      <div class="kpi"><div class="ic i-g"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg></div>
-        <div class="lab">Recovered / month</div><div class="val" id="l-rec">-</div><div class="s2">GHS, loans + advances</div></div>
+      <a class="kpi" id="card-lbal"><div class="ic i-v"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg></div>
+        <div class="lab">Ledger balance (GHS)</div><div class="val" id="l-bal">-</div><div class="s2" id="l-bal2">-</div></a>
+      <a class="kpi" id="card-loanamt"><div class="ic i-a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V10M19 21V10M3 10h18M5 6l7-3 7 3M9 14v3M15 14v3"/></svg></div>
+        <div class="lab">Loans (payroll)</div><div class="val" id="l-loanamt">-</div><div class="s2" id="l-loanamt2">-</div></a>
+      <a class="kpi" id="card-advamt"><div class="ic i-t"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+        <div class="lab">Advances (payroll)</div><div class="val" id="l-advamt">-</div><div class="s2" id="l-advamt2">-</div></a>
+      <a class="kpi" id="card-rec"><div class="ic i-g"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg></div>
+        <div class="lab">Recovered / month</div><div class="val" id="l-rec">-</div><div class="s2">GHS, loans + advances</div></a>
     </div>
 
     <div class="grid2">
@@ -364,14 +411,14 @@
   <!-- ============ LEAVE ============ -->
   <section class="view" id="v-leave">
     <div class="kpis">
-      <div class="kpi"><div class="ic i-g"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 20A7 7 0 0 1 4 13c0-5 4-9 10-10 3-.5 6 0 6 0s.5 3 0 6c-1 6-5 10-10 10z"/></svg></div>
-        <div class="lab">Days entitled (pool)</div><div class="val" id="v-ent">-</div><div class="s2">current allocations, all staff</div></div>
-      <div class="kpi"><div class="ic i-t"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div>
-        <div class="lab">Days taken this year</div><div class="val" id="v-taken">-</div><div class="s2" id="v-taken2">-</div></div>
-      <div class="kpi"><div class="ic i-a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
-        <div class="lab">Pending applications</div><div class="val" id="v-pend">-</div><div class="s2">awaiting approval</div></div>
-      <div class="kpi"><div class="ic i-v"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg></div>
-        <div class="lab">Encash requested</div><div class="val" id="v-enc">-</div><div class="s2" id="v-enc2">-</div></div>
+      <a class="kpi" id="card-ent"><div class="ic i-g"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 20A7 7 0 0 1 4 13c0-5 4-9 10-10 3-.5 6 0 6 0s.5 3 0 6c-1 6-5 10-10 10z"/></svg></div>
+        <div class="lab">Days entitled (pool)</div><div class="val" id="v-ent">-</div><div class="s2">current allocations, all staff</div></a>
+      <a class="kpi" id="card-taken"><div class="ic i-t"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div>
+        <div class="lab">Days taken this year</div><div class="val" id="v-taken">-</div><div class="s2" id="v-taken2">-</div></a>
+      <a class="kpi" id="card-pend"><div class="ic i-a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
+        <div class="lab">Pending applications</div><div class="val" id="v-pend">-</div><div class="s2">awaiting approval</div></a>
+      <a class="kpi" id="card-enc"><div class="ic i-v"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg></div>
+        <div class="lab">Encash requested</div><div class="val" id="v-enc">-</div><div class="s2" id="v-enc2">-</div></a>
     </div>
 
     <div class="grid2">
@@ -408,8 +455,9 @@
     </div>
   </div>
 
-  <div class="note" style="border:none;display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 20px;align-items:center">
+  <div class="foot-line">
     <span><b style="color:var(--muted)">Betonsa Ghana Limited</b> | Executive Command Center | Figures refresh on load and every 5 minutes.</span>
+    <span class="foot-sep">|</span>
     <span>Built on Python by <b style="color:var(--amber)">Michael</b> |
       Support: <a href="mailto:michael@powersoftsystem.com" style="color:var(--teal);text-decoration:none">michael@powersoftsystem.com</a> |
       <a href="tel:+233547260353" style="color:var(--teal);text-decoration:none">+233 54 726 0353</a></span>
@@ -510,8 +558,63 @@
     seg.querySelectorAll('button').forEach(function(x){ x.classList.remove('on'); });
     b.classList.add('on'); renderCrew(b.dataset.s); });});
 
+  var PERIOD={from:'',to:'',site:'All',label:'This month'};
+  function iso(dt){ return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'); }
+  function computePeriod(){
+    var now=new Date(), p=el('f-preset').value, a, b;
+    if(p==='today'){ a=b=now; PERIOD.label='Today'; }
+    else if(p==='yesterday'){ a=b=new Date(now-864e5); PERIOD.label='Yesterday'; }
+    else if(p==='week'){ var d=(now.getDay()+6)%7; a=new Date(now-d*864e5); b=now; PERIOD.label='This week'; }
+    else if(p==='lastmonth'){ a=new Date(now.getFullYear(), now.getMonth()-1, 1); b=new Date(now.getFullYear(), now.getMonth(), 0); PERIOD.label='Last month'; }
+    else if(p==='ytd'){ a=new Date(now.getFullYear(),0,1); b=now; PERIOD.label='This year'; }
+    else if(p==='custom'){
+      PERIOD.from=el('f-from').value||iso(now); PERIOD.to=el('f-to').value||iso(now);
+      PERIOD.label='Custom'; PERIOD.site=el('f-site').value; return;
+    }
+    else { a=new Date(now.getFullYear(), now.getMonth(), 1); b=now; PERIOD.label='This month'; }
+    PERIOD.from=iso(a); PERIOD.to=iso(b); PERIOD.site=el('f-site').value;
+  }
+  function listUrl(dt, filters){
+    var qs=Object.keys(filters).map(function(k){
+      var v=filters[k];
+      return encodeURIComponent(k)+'='+encodeURIComponent(typeof v==='string'? v : JSON.stringify(v));
+    }).join('&');
+    return '/app/'+dt+(qs?'?'+qs:'');
+  }
+  function wireCards(){
+    var between=["between",[PERIOD.from, PERIOD.to]];
+    var siteF = PERIOD.site!=='All' ? {branch: PERIOD.site} : {};
+    function setHref(id, url){ var e=el(id); if(e){ e.setAttribute('href', url); e.setAttribute('target','_blank'); } }
+    setHref('card-trips', listUrl('daily-trip-log', Object.assign({unit:'Trip', docstatus:'1', log_date:between}, siteF)));
+    setHref('card-cubic', listUrl('daily-trip-log', Object.assign({unit:'Cubic', docstatus:'1', log_date:between}, siteF)));
+    setHref('card-today', listUrl('daily-trip-log', Object.assign({log_date:iso(new Date())}, siteF)));
+    setHref('card-pay', '/app/query-report/BGL Trip Costing?from_date='+PERIOD.from+'&to_date='+PERIOD.to+'&site='+PERIOD.site+'&scope=All Submitted');
+    setHref('card-crew', listUrl('employee', {status:'Active', designation:["in",["Mixer Driver","Pump Driver","Pump Operator","Trailer Driver","Plant Operator","Chemical"]]}));
+    setHref('card-owing', listUrl('additional-salary', {salary_component:["in",["Loans","Salary Advance"]]}));
+    setHref('card-onleave', listUrl('leave-application', {status:'Open'}));
+    setHref('card-lbal', listUrl('staff-loan-advance', {status:'Active'}));
+    setHref('card-loanamt', listUrl('additional-salary', {salary_component:'Loans'}));
+    setHref('card-advamt', listUrl('additional-salary', {salary_component:'Salary Advance'}));
+    setHref('card-rec', listUrl('additional-salary', {salary_component:["in",["Loans","Salary Advance"]]}));
+    setHref('card-ent', listUrl('leave-allocation', {docstatus:'1'}));
+    setHref('card-taken', listUrl('leave-application', {status:'Approved', docstatus:'1'}));
+    setHref('card-pend', listUrl('leave-application', {status:'Open'}));
+    setHref('card-enc', listUrl('leave-encashment-request', {status:'Requested'}));
+  }
+  el('f-preset').addEventListener('change', function(){
+    var c=this.value==='custom';
+    el('f-from').style.display=c?'':'none'; el('f-to').style.display=c?'':'none';
+    if(!c) load();
+  });
+  el('f-site').addEventListener('change', load);
+  el('f-from').addEventListener('change', function(){ if(el('f-to').value) load(); });
+  el('f-to').addEventListener('change', function(){ if(el('f-from').value) load(); });
+
   function load(){
-    api('dashboard_data', {}, function(d){
+    computePeriod();
+    api('dashboard_data', {from_date:PERIOD.from, to_date:PERIOD.to, site:PERIOD.site}, function(d){
+      el('f-label').innerHTML='Showing <b>'+PERIOD.label+'</b> ('+PERIOD.from+' to '+PERIOD.to+')'+(PERIOD.site!=='All'?' | <b>'+PERIOD.site+'</b>':'');
+      wireCards();
       el('dateline').textContent = "Here's where Betonsa stands - " +
         new Date(d.as_of+'T00:00:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}) + '.';
 
@@ -556,7 +659,7 @@
         '<tr><td>'+dot('good')+'Encash requests</td><td class="r">'+(encReq? encReq+' ('+fmt(encDays)+' days)' : 'none pending')+'</td></tr>';
 
       // trips tab
-      countUp('t-trips', d.trips_month.qty); el('t-trips2').textContent='GHS '+fmt(d.trips_month.amt)+' earned';
+      countUp('t-trips', d.trips_month.qty); el('t-trips2').textContent='GHS '+fmt(d.trips_month.amt)+' earned | '+PERIOD.label.toLowerCase();
       countUp('t-cubic', d.cubic_month.qty); el('t-cubic2').textContent='GHS '+fmt(d.cubic_month.amt)+' earned';
       countUp('t-today', d.logs_today.cnt); el('t-today2').textContent=fmt(d.logs_today.qty)+' qty entered';
       countUp('t-pay', d.trips_month.amt + d.cubic_month.amt);
@@ -638,23 +741,30 @@
     var cx=cv.getContext('2d'), W, H, P=[];
     function size(){ W=cv.width=innerWidth; H=cv.height=innerHeight; }
     size(); addEventListener('resize', size);
+    var PAL={
+      dark:  ['240,160,75','63,193,203','154,150,232'],
+      light: ['186,90,10','10,110,118','80,75,170']
+    };
+    var ALPHA={dark:{dot:.55,line:.13}, light:{dot:.5,line:.16}};
+    function theme(){ return document.documentElement.getAttribute('data-theme')==='light' ? 'light' : 'dark'; }
     var N=Math.min(90, Math.round(innerWidth/16));
     for(var i=0;i<N;i++) P.push({x:Math.random()*innerWidth, y:Math.random()*innerHeight,
       vx:(Math.random()-.5)*.28, vy:(Math.random()-.5)*.28, r:Math.random()*1.6+.6,
-      c: Math.random()<.75 ? '240,160,75' : (Math.random()<.5 ? '63,193,203' : '154,150,232')});
+      ci: Math.random()<.75 ? 0 : (Math.random()<.5 ? 1 : 2)});
     function tick(){
+      var t=theme(), pal=PAL[t], al=ALPHA[t];
       cx.clearRect(0,0,W,H);
       for(var i=0;i<P.length;i++){
         var p=P[i];
         p.x+=p.vx; p.y+=p.vy;
         if(p.x<0||p.x>W) p.vx*=-1; if(p.y<0||p.y>H) p.vy*=-1;
         cx.beginPath(); cx.arc(p.x,p.y,p.r,0,6.283);
-        cx.fillStyle='rgba('+p.c+',.55)'; cx.fill();
+        cx.fillStyle='rgba('+pal[p.ci]+','+al.dot+')'; cx.fill();
         for(var j=i+1;j<P.length;j++){
           var q=P[j], dx=p.x-q.x, dy=p.y-q.y, d2=dx*dx+dy*dy;
           if(d2<15000){
             cx.beginPath(); cx.moveTo(p.x,p.y); cx.lineTo(q.x,q.y);
-            cx.strokeStyle='rgba('+p.c+','+(0.13*(1-d2/15000)).toFixed(3)+')';
+            cx.strokeStyle='rgba('+pal[p.ci]+','+(al.line*(1-d2/15000)).toFixed(3)+')';
             cx.lineWidth=1; cx.stroke();
           }
         }

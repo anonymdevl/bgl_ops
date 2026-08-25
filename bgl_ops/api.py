@@ -49,22 +49,33 @@ def _rate_for(rates, pay_group, site, day_type, on_date):
 
 
 @frappe.whitelist()
-def dashboard_data():
-    """All figures for the /command-center page in one call."""
+def dashboard_data(from_date=None, to_date=None, site=None):
+    """All figures for the /command-center page in one call.
+
+    from_date/to_date scope the trip metrics (default: month to date).
+    site filters trips to one branch ('All' or empty = both).
+    Loans, leave and encashment are point-in-time and ignore the period.
+    """
     _require_access()
-    month_start = get_first_day(today())
+    period_start = str(getdate(from_date)) if from_date else str(get_first_day(today()))
+    period_end = str(getdate(to_date)) if to_date else today()
+    if period_start > period_end:
+        period_start, period_end = period_end, period_start
+    site = site if site in ("Airport", "Tema") else "All"
     yesterday = add_days(today(), -1)
 
+    p = {"f": period_start, "t": period_end, "site": site}
+    site_cond = " and (%(site)s = 'All' or branch = %(site)s)"
     trips_month = _q(
         """select ifnull(sum(quantity),0) qty, ifnull(sum(amount),0) amt
            from `tabDaily Trip Log`
-           where docstatus=1 and unit='Trip' and log_date >= %(ms)s""",
-        {"ms": month_start})[0]
+           where docstatus=1 and unit='Trip'
+             and log_date between %(f)s and %(t)s""" + site_cond, p)[0]
     cubic_month = _q(
         """select ifnull(sum(quantity),0) qty, ifnull(sum(amount),0) amt
            from `tabDaily Trip Log`
-           where docstatus=1 and unit='Cubic' and log_date >= %(ms)s""",
-        {"ms": month_start})[0]
+           where docstatus=1 and unit='Cubic'
+             and log_date between %(f)s and %(t)s""" + site_cond, p)[0]
     logs_today = _q(
         """select count(*) cnt, ifnull(sum(quantity),0) qty
            from `tabDaily Trip Log`
@@ -79,15 +90,13 @@ def dashboard_data():
         """select branch site, pay_group, ifnull(sum(quantity),0) qty,
                   ifnull(sum(amount),0) amt
            from `tabDaily Trip Log`
-           where docstatus=1 and log_date >= %(ms)s
-           group by branch, pay_group order by amt desc""",
-        {"ms": month_start})
+           where docstatus=1 and log_date between %(f)s and %(t)s""" + site_cond + """
+           group by branch, pay_group order by amt desc""", p)
     trend = _q(
         """select log_date d, ifnull(sum(amount),0) amt, ifnull(sum(quantity),0) qty
            from `tabDaily Trip Log`
-           where docstatus=1 and log_date >= %(f)s
-           group by log_date order by log_date""",
-        {"f": add_days(today(), -14)})
+           where docstatus=1 and log_date between %(f)s and %(t)s""" + site_cond + """
+           group by log_date order by log_date limit 92""", p)
 
     # Loans - the new ledger (source of truth once seeded)
     loans = _q(
@@ -148,6 +157,7 @@ def dashboard_data():
 
     return {
         "as_of": today(),
+        "period": {"from_date": period_start, "to_date": period_end, "site": site},
         "yesterday": yesterday,
         "trips_month": trips_month,
         "cubic_month": cubic_month,
