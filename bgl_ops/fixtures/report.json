@@ -1,0 +1,449 @@
+[
+ {
+  "doctype": "Report",
+  "name": "BGL Trip Costing",
+  "report_name": "BGL Trip Costing",
+  "ref_doctype": "Daily Trip Log",
+  "report_type": "Query Report",
+  "is_standard": "No",
+  "disabled": 0,
+  "query": "SELECT dtl.payroll_month AS \"Month:Data:80\", dtl.branch AS \"Site:Data:80\", dtl.pay_group AS \"Pay Group:Data:120\", dtl.employee AS \"Employee:Link/Employee:110\", dtl.employee_name AS \"Name:Data:150\", dtl.unit AS \"Unit:Data:60\", SUM(dtl.quantity) AS \"Qty:Float:80\", dtl.salary_component AS \"Component:Link/Salary Component:170\", SUM(dtl.amount) AS \"Amount:Currency:110\" FROM `tabDaily Trip Log` dtl WHERE dtl.docstatus = 1 AND dtl.pulled_to_payroll = 0 GROUP BY dtl.payroll_month, dtl.employee, dtl.salary_component ORDER BY dtl.branch, dtl.pay_group, dtl.employee_name",
+  "roles": [
+   {
+    "role": "System Manager"
+   },
+   {
+    "role": "HR Manager"
+   },
+   {
+    "role": "HR User"
+   }
+  ]
+ },
+ {
+  "doctype": "Report",
+  "name": "BGL Trips - Yesterday",
+  "report_name": "BGL Trips - Yesterday",
+  "ref_doctype": "Daily Trip Log",
+  "report_type": "Query Report",
+  "is_standard": "No",
+  "disabled": 0,
+  "query": "SELECT dtl.branch AS \"Site:Data:90\", dtl.pay_group AS \"Pay Group:Data:120\", dtl.employee_name AS \"Driver / Operator:Data:170\", dtl.unit AS \"Unit:Data:60\", dtl.quantity AS \"Qty:Float:80\", dtl.amount AS \"Amount:Currency:110\", dtl.truck_no AS \"Truck:Data:90\" FROM `tabDaily Trip Log` dtl WHERE dtl.docstatus = 1 AND dtl.log_date = CURDATE() - INTERVAL 1 DAY ORDER BY dtl.branch, dtl.pay_group, dtl.employee_name",
+  "roles": [
+   {
+    "role": "System Manager"
+   },
+   {
+    "role": "HR Manager"
+   },
+   {
+    "role": "HR User"
+   }
+  ]
+ },
+ {
+  "doctype": "Report",
+  "name": "BGL Leave Balance Board",
+  "report_name": "BGL Leave Balance Board",
+  "ref_doctype": "Leave Allocation",
+  "report_type": "Query Report",
+  "is_standard": "No",
+  "disabled": 0,
+  "query": "SELECT la.employee AS \"Employee:Link/Employee:110\", la.employee_name AS \"Name:Data:150\", la.leave_type AS \"Leave Type:Data:110\", SUM(la.total_leaves_allocated) AS \"Entitled:Float:75\", MAX(IFNULL(app.taken,0)) AS \"Taken:Float:65\", MAX(IFNULL(pend.pending,0)) AS \"Pending:Float:70\", (SUM(la.total_leaves_allocated) - MAX(IFNULL(app.taken,0)) - MAX(IFNULL(paid.paid_days,0))) AS \"Remaining:Float:80\", MAX(IFNULL(req.req_days,0)) AS \"Encash Requested:Float:120\", MAX(IFNULL(paid.paid_days,0)) AS \"Encash Paid:Float:90\" FROM `tabLeave Allocation` la LEFT JOIN (SELECT employee, leave_type, SUM(total_leave_days) taken FROM `tabLeave Application` WHERE docstatus=1 AND status='Approved' GROUP BY employee, leave_type) app ON app.employee=la.employee AND app.leave_type=la.leave_type LEFT JOIN (SELECT employee, leave_type, SUM(total_leave_days) pending FROM `tabLeave Application` WHERE docstatus=0 AND status='Open' GROUP BY employee, leave_type) pend ON pend.employee=la.employee AND pend.leave_type=la.leave_type LEFT JOIN (SELECT employee, leave_type, SUM(days) req_days FROM `tabLeave Encashment Request` WHERE status IN ('Requested','Approved') GROUP BY employee, leave_type) req ON req.employee=la.employee AND req.leave_type=la.leave_type LEFT JOIN (SELECT employee, leave_type, SUM(days) paid_days FROM `tabLeave Encashment Request` WHERE status='Paid' GROUP BY employee, leave_type) paid ON paid.employee=la.employee AND paid.leave_type=la.leave_type WHERE la.docstatus=1 AND la.from_date<=CURDATE() AND la.to_date>=CURDATE() GROUP BY la.employee, la.leave_type ORDER BY la.employee_name, la.leave_type",
+  "roles": [
+   {
+    "role": "System Manager"
+   },
+   {
+    "role": "HR Manager"
+   },
+   {
+    "role": "HR User"
+   }
+  ]
+ },
+ {
+  "doctype": "Report",
+  "name": "Additional Salary Report",
+  "report_name": "Additional Salary Report",
+  "ref_doctype": "Additional Salary",
+  "report_type": "Query Report",
+  "is_standard": "No",
+  "disabled": 0,
+  "add_total_row": 1,
+  "query": "SELECT\n    IFNULL(emp.branch, '(No Branch)') AS \"Branch::110\",\n    ads.department AS \"Department::170\",\n    emp.designation AS \"Designation::150\",\n    ads.employee AS \"Employee ID:Link/Employee:120\",\n    ads.employee_name AS \"Employee Name::200\",\n\n    IFNULL(SUM(CASE WHEN ads.type='Earning' AND ads.salary_component='Housing Allowance' THEN ads.amount END),0) AS \"Housing:Currency:110\",\n    IFNULL(SUM(CASE WHEN ads.type='Earning' AND ads.salary_component='Transport Allowance' THEN ads.amount END),0) AS \"Transport:Currency:110\",\n    IFNULL(SUM(CASE WHEN ads.type='Earning' AND ads.salary_component='Extra Duty Allowance' THEN ads.amount END),0) AS \"Extra Duty:Currency:110\",\n    IFNULL(SUM(CASE WHEN ads.type='Earning' AND ads.salary_component='Overtime Allowance' THEN ads.amount END),0) AS \"Overtime:Currency:110\",\n    IFNULL(SUM(CASE WHEN ads.type='Earning' AND ads.salary_component='Cubic' THEN ads.amount END),0) AS \"Cubic:Currency:100\",\n    IFNULL(SUM(CASE WHEN ads.type='Earning' AND ads.salary_component='Trips' THEN ads.amount END),0) AS \"Trips:Currency:100\",\n    IFNULL(SUM(CASE WHEN ads.type='Earning' AND ads.salary_component NOT IN ('Housing Allowance','Transport Allowance','Extra Duty Allowance','Overtime Allowance','Cubic','Trips') THEN ads.amount END),0) AS \"Other Allowances:Currency:140\",\n\n    IFNULL(SUM(CASE WHEN ads.type='Earning' THEN ads.amount END),0) AS \"TOTAL ALLOWANCES:Currency:150\",\n\n    IFNULL(SUM(CASE WHEN ads.type='Deduction' AND ads.salary_component='Salary Advance' THEN ads.amount END),0) AS \"Salary Advance:Currency:130\",\n    IFNULL(SUM(CASE WHEN ads.type='Deduction' AND ads.salary_component='Loans' THEN ads.amount END),0) AS \"Loans:Currency:100\",\n    IFNULL(SUM(CASE WHEN ads.type='Deduction' AND ads.salary_component IN ('Absent','Absent Days') THEN ads.amount END),0) AS \"Absent:Currency:100\",\n    IFNULL(SUM(CASE WHEN ads.type='Deduction' AND ads.salary_component='Damage' THEN ads.amount END),0) AS \"Damage:Currency:100\",\n    IFNULL(SUM(CASE WHEN ads.type='Deduction' AND ads.salary_component NOT IN ('Salary Advance','Loans','Absent','Absent Days','Damage') THEN ads.amount END),0) AS \"Other Deductions:Currency:140\",\n\n    IFNULL(SUM(CASE WHEN ads.type='Deduction' THEN ads.amount END),0) AS \"TOTAL DEDUCTIONS:Currency:150\",\n\n    IFNULL(SUM(CASE WHEN ads.type='Earning' THEN ads.amount END),0)\n      - IFNULL(SUM(CASE WHEN ads.type='Deduction' THEN ads.amount END),0) AS \"NET ADDITIONAL:Currency:150\",\n\n    COUNT(ads.name) AS \"Entries:Int:80\"\n\nFROM `tabAdditional Salary` ads\nLEFT JOIN `tabEmployee` emp ON emp.name = ads.employee\nWHERE ads.company = %(company)s\n  AND ads.disabled = 0\n  AND ads.payroll_date BETWEEN %(from_date)s AND %(to_date)s\n  AND ( (%(status)s = 'Draft' AND ads.docstatus = 0)\n     OR (%(status)s = 'Submitted' AND ads.docstatus = 1)\n     OR (%(status)s = 'Both' AND ads.docstatus IN (0,1)) )\n  AND ( %(branch)s = 'All' OR IFNULL(emp.branch, '(No Branch)') = %(branch)s )\nGROUP BY ads.employee, emp.branch, ads.department, emp.designation, ads.employee_name\nHAVING IFNULL(SUM(CASE WHEN ads.type='Earning' THEN ads.amount END),0) <> 0\n    OR IFNULL(SUM(CASE WHEN ads.type='Deduction' THEN ads.amount END),0) <> 0\nORDER BY IFNULL(emp.branch, '(No Branch)'), ads.department, ads.employee_name",
+  "filters": [
+   {
+    "fieldname": "company",
+    "label": "Company",
+    "fieldtype": "Link",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "Company",
+    "default": "Betonsa Ghana Limited"
+   },
+   {
+    "fieldname": "from_date",
+    "label": "From Date",
+    "fieldtype": "Date",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "default": "Today"
+   },
+   {
+    "fieldname": "to_date",
+    "label": "To Date",
+    "fieldtype": "Date",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "default": "Today"
+   },
+   {
+    "fieldname": "branch",
+    "label": "Branch",
+    "fieldtype": "Select",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "All\nTema\nAirport",
+    "default": "All"
+   },
+   {
+    "fieldname": "status",
+    "label": "Status",
+    "fieldtype": "Select",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "Draft\nSubmitted\nBoth",
+    "default": "Draft"
+   }
+  ],
+  "roles": [
+   {
+    "role": "System Manager"
+   },
+   {
+    "role": "HR Manager"
+   },
+   {
+    "role": "HR User"
+   }
+  ],
+  "letter_head": "Betonsa"
+ },
+ {
+  "doctype": "Report",
+  "name": "Additional Salary Summary by Branch",
+  "report_name": "Additional Salary Summary by Branch",
+  "ref_doctype": "Additional Salary",
+  "report_type": "Query Report",
+  "is_standard": "No",
+  "disabled": 0,
+  "add_total_row": 1,
+  "query": "SELECT\n    IFNULL(emp.branch, '(No Branch)') AS \"Branch::140\",\n    COUNT(DISTINCT ads.employee) AS \"Employees:Int:110\",\n\n    IFNULL(SUM(CASE WHEN ads.type='Earning' AND ads.salary_component='Housing Allowance' THEN ads.amount END),0) AS \"Housing:Currency:120\",\n    IFNULL(SUM(CASE WHEN ads.type='Earning' AND ads.salary_component='Transport Allowance' THEN ads.amount END),0) AS \"Transport:Currency:120\",\n    IFNULL(SUM(CASE WHEN ads.type='Earning' AND ads.salary_component='Extra Duty Allowance' THEN ads.amount END),0) AS \"Extra Duty:Currency:120\",\n    IFNULL(SUM(CASE WHEN ads.type='Earning' AND ads.salary_component='Overtime Allowance' THEN ads.amount END),0) AS \"Overtime:Currency:120\",\n    IFNULL(SUM(CASE WHEN ads.type='Earning' AND ads.salary_component='Cubic' THEN ads.amount END),0) AS \"Cubic:Currency:110\",\n    IFNULL(SUM(CASE WHEN ads.type='Earning' AND ads.salary_component='Trips' THEN ads.amount END),0) AS \"Trips:Currency:110\",\n    IFNULL(SUM(CASE WHEN ads.type='Earning' AND ads.salary_component NOT IN ('Housing Allowance','Transport Allowance','Extra Duty Allowance','Overtime Allowance','Cubic','Trips') THEN ads.amount END),0) AS \"Other Allowances:Currency:150\",\n\n    IFNULL(SUM(CASE WHEN ads.type='Earning' THEN ads.amount END),0) AS \"TOTAL ALLOWANCES:Currency:160\",\n\n    IFNULL(SUM(CASE WHEN ads.type='Deduction' AND ads.salary_component='Salary Advance' THEN ads.amount END),0) AS \"Salary Advance:Currency:140\",\n    IFNULL(SUM(CASE WHEN ads.type='Deduction' AND ads.salary_component='Loans' THEN ads.amount END),0) AS \"Loans:Currency:110\",\n    IFNULL(SUM(CASE WHEN ads.type='Deduction' AND ads.salary_component IN ('Absent','Absent Days') THEN ads.amount END),0) AS \"Absent:Currency:110\",\n    IFNULL(SUM(CASE WHEN ads.type='Deduction' AND ads.salary_component='Damage' THEN ads.amount END),0) AS \"Damage:Currency:110\",\n    IFNULL(SUM(CASE WHEN ads.type='Deduction' AND ads.salary_component NOT IN ('Salary Advance','Loans','Absent','Absent Days','Damage') THEN ads.amount END),0) AS \"Other Deductions:Currency:150\",\n\n    IFNULL(SUM(CASE WHEN ads.type='Deduction' THEN ads.amount END),0) AS \"TOTAL DEDUCTIONS:Currency:160\",\n\n    IFNULL(SUM(CASE WHEN ads.type='Earning' THEN ads.amount END),0)\n      - IFNULL(SUM(CASE WHEN ads.type='Deduction' THEN ads.amount END),0) AS \"NET ADDITIONAL:Currency:160\",\n\n    COUNT(ads.name) AS \"Entries:Int:90\"\n\nFROM `tabAdditional Salary` ads\nLEFT JOIN `tabEmployee` emp ON emp.name = ads.employee\nWHERE ads.company = %(company)s\n  AND ads.disabled = 0\n  AND ads.payroll_date BETWEEN %(from_date)s AND %(to_date)s\n  AND ( (%(status)s = 'Draft' AND ads.docstatus = 0)\n     OR (%(status)s = 'Submitted' AND ads.docstatus = 1)\n     OR (%(status)s = 'Both' AND ads.docstatus IN (0,1)) )\n  AND ( %(branch)s = 'All' OR IFNULL(emp.branch, '(No Branch)') = %(branch)s )\nGROUP BY IFNULL(emp.branch, '(No Branch)')\nHAVING IFNULL(SUM(CASE WHEN ads.type='Earning' THEN ads.amount END),0) <> 0\n    OR IFNULL(SUM(CASE WHEN ads.type='Deduction' THEN ads.amount END),0) <> 0\nORDER BY IFNULL(emp.branch, '(No Branch)')",
+  "filters": [
+   {
+    "fieldname": "company",
+    "label": "Company",
+    "fieldtype": "Link",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "Company",
+    "default": "Betonsa Ghana Limited"
+   },
+   {
+    "fieldname": "from_date",
+    "label": "From Date",
+    "fieldtype": "Date",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "default": "Today"
+   },
+   {
+    "fieldname": "to_date",
+    "label": "To Date",
+    "fieldtype": "Date",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "default": "Today"
+   },
+   {
+    "fieldname": "branch",
+    "label": "Branch",
+    "fieldtype": "Select",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "All\nTema\nAirport",
+    "default": "All"
+   },
+   {
+    "fieldname": "status",
+    "label": "Status",
+    "fieldtype": "Select",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "Draft\nSubmitted\nBoth",
+    "default": "Draft"
+   }
+  ],
+  "roles": [
+   {
+    "role": "System Manager"
+   },
+   {
+    "role": "HR Manager"
+   },
+   {
+    "role": "HR User"
+   }
+  ],
+  "letter_head": "Betonsa"
+ },
+ {
+  "doctype": "Report",
+  "name": "Payroll Summary Report - Adenta",
+  "report_name": "Payroll Summary Report - Adenta",
+  "ref_doctype": "Salary Slip",
+  "report_type": "Query Report",
+  "is_standard": "No",
+  "disabled": 0,
+  "add_total_row": 1,
+  "query": "SELECT\n    ss.branch AS \"Branch::100\",\n    ss.designation AS \"Staff Designation::170\",\n    ss.employee_name AS \"Full Name::200\",\n\n    IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='Basic Salary' THEN sd.amount END),0) AS \"Basic Salary:Currency:120\",\n\n    ss.gross_pay\n      - IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='Basic Salary' THEN sd.amount END),0)\n      - IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component IN ('Overtime Allowance','Cubic','Trips','Marketing Driver OT','Pump Cubic Incentive','Plant Cubic Incentive','Mixer Driver Cubic - Airport','Mixer Driver Cubic - Tema','Cubic - Weekday','Cubic - Weekend') THEN sd.amount END),0) AS \"Allowance:Currency:120\",\n\n    IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component IN ('Overtime Allowance','Cubic','Trips','Marketing Driver OT','Pump Cubic Incentive','Plant Cubic Incentive','Mixer Driver Cubic - Airport','Mixer Driver Cubic - Tema','Cubic - Weekday','Cubic - Weekend') THEN sd.amount END),0) AS \"Overtime Allowance:Currency:140\",\n\n    ss.gross_pay AS \"Gross Salary:Currency:130\",\n\n    IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component='5.5%% SSNIT' THEN sd.amount END),0) AS \"5.5%% SSNIT:Currency:110\",\n    IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component='PAYE' THEN sd.amount END),0) AS \"PAYE:Currency:110\",\n    IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component IN ('Overtime Tax','Overtime Tax - Cubic','Overtime Tax - Trips') THEN sd.amount END),0) AS \"Overtime Tax:Currency:120\",\n    IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component='Loans' THEN sd.amount END),0) AS \"Loan:Currency:100\",\n    IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component IN ('Absent','Absent Days') THEN sd.amount END),0) AS \"Absent:Currency:100\",\n    IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component='Damage' THEN sd.amount END),0) AS \"Damage:Currency:100\",\n    IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component IN ('Welfare','Provident Fund','Other Deductions') THEN sd.amount END),0) AS \"Other Deductions:Currency:130\",\n\n    ss.net_pay + IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component='Salary Advance' THEN sd.amount END),0) AS \"Net Pay:Currency:130\",\n    -IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component='Salary Advance' THEN sd.amount END),0) AS \"Salary Advance:Currency:130\",\n    ss.net_pay AS \"Total Salary Payable:Currency:150\"\n\nFROM `tabSalary Slip` ss\nLEFT JOIN `tabSalary Detail` sd ON sd.parent = ss.name\nWHERE ss.docstatus = %(docstatus)s\n  AND ss.company = %(company)s\n  AND ss.branch = 'Airport'\n  AND ss.start_date >= %(from_date)s\n  AND ss.end_date <= %(to_date)s\nGROUP BY ss.name, ss.branch, ss.designation, ss.employee_name, ss.gross_pay, ss.net_pay\nORDER BY ss.designation, ss.employee_name",
+  "filters": [
+   {
+    "fieldname": "company",
+    "label": "Company",
+    "fieldtype": "Link",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "Company",
+    "default": "Betonsa Ghana Limited"
+   },
+   {
+    "fieldname": "from_date",
+    "label": "From Date",
+    "fieldtype": "Date",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "default": "Today"
+   },
+   {
+    "fieldname": "to_date",
+    "label": "To Date",
+    "fieldtype": "Date",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "default": "Today"
+   },
+   {
+    "fieldname": "docstatus",
+    "label": "Status",
+    "fieldtype": "Select",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "0\n1",
+    "default": "0"
+   }
+  ],
+  "roles": [
+   {
+    "role": "System Manager"
+   },
+   {
+    "role": "HR Manager"
+   },
+   {
+    "role": "HR User"
+   }
+  ]
+ },
+ {
+  "doctype": "Report",
+  "name": "Payroll Summary Report - Tema",
+  "report_name": "Payroll Summary Report - Tema",
+  "ref_doctype": "Salary Slip",
+  "report_type": "Query Report",
+  "is_standard": "No",
+  "disabled": 0,
+  "add_total_row": 1,
+  "query": "SELECT\n    ss.branch AS \"Branch::100\",\n    ss.designation AS \"Staff Designation::170\",\n    ss.employee_name AS \"Full Name::200\",\n\n    IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='Basic Salary' THEN sd.amount END),0) AS \"Basic Salary:Currency:120\",\n\n    ss.gross_pay\n      - IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='Basic Salary' THEN sd.amount END),0)\n      - IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component IN ('Overtime Allowance','Cubic','Trips','Marketing Driver OT','Pump Cubic Incentive','Plant Cubic Incentive','Mixer Driver Cubic - Airport','Mixer Driver Cubic - Tema','Cubic - Weekday','Cubic - Weekend') THEN sd.amount END),0) AS \"Allowance:Currency:120\",\n\n    IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component IN ('Overtime Allowance','Cubic','Trips','Marketing Driver OT','Pump Cubic Incentive','Plant Cubic Incentive','Mixer Driver Cubic - Airport','Mixer Driver Cubic - Tema','Cubic - Weekday','Cubic - Weekend') THEN sd.amount END),0) AS \"Overtime Allowance:Currency:140\",\n\n    ss.gross_pay AS \"Gross Salary:Currency:130\",\n\n    IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component='5.5%% SSNIT' THEN sd.amount END),0) AS \"5.5%% SSNIT:Currency:110\",\n    IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component='PAYE' THEN sd.amount END),0) AS \"PAYE:Currency:110\",\n    IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component IN ('Overtime Tax','Overtime Tax - Cubic','Overtime Tax - Trips') THEN sd.amount END),0) AS \"Overtime Tax:Currency:120\",\n    IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component='Loans' THEN sd.amount END),0) AS \"Loan:Currency:100\",\n    IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component IN ('Absent','Absent Days') THEN sd.amount END),0) AS \"Absent:Currency:100\",\n    IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component='Damage' THEN sd.amount END),0) AS \"Damage:Currency:100\",\n    IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component IN ('Welfare','Provident Fund','Other Deductions') THEN sd.amount END),0) AS \"Other Deductions:Currency:130\",\n\n    ss.net_pay + IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component='Salary Advance' THEN sd.amount END),0) AS \"Net Pay:Currency:130\",\n    -IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component='Salary Advance' THEN sd.amount END),0) AS \"Salary Advance:Currency:130\",\n    ss.net_pay AS \"Total Salary Payable:Currency:150\"\n\nFROM `tabSalary Slip` ss\nLEFT JOIN `tabSalary Detail` sd ON sd.parent = ss.name\nWHERE ss.docstatus = %(docstatus)s\n  AND ss.company = %(company)s\n  AND ss.branch = 'Tema'\n  AND ss.start_date >= %(from_date)s\n  AND ss.end_date <= %(to_date)s\nGROUP BY ss.name, ss.branch, ss.designation, ss.employee_name, ss.gross_pay, ss.net_pay\nORDER BY ss.designation, ss.employee_name",
+  "filters": [
+   {
+    "fieldname": "company",
+    "label": "Company",
+    "fieldtype": "Link",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "Company",
+    "default": "Betonsa Ghana Limited"
+   },
+   {
+    "fieldname": "from_date",
+    "label": "From Date",
+    "fieldtype": "Date",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "default": "Today"
+   },
+   {
+    "fieldname": "to_date",
+    "label": "To Date",
+    "fieldtype": "Date",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "default": "Today"
+   },
+   {
+    "fieldname": "docstatus",
+    "label": "Status",
+    "fieldtype": "Select",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "0\n1",
+    "default": "0"
+   }
+  ],
+  "roles": [
+   {
+    "role": "System Manager"
+   },
+   {
+    "role": "HR Manager"
+   },
+   {
+    "role": "HR User"
+   }
+  ]
+ },
+ {
+  "doctype": "Report",
+  "name": "SSNIT 5.5% & 13% Report",
+  "report_name": "SSNIT 5.5% & 13% Report",
+  "ref_doctype": "Salary Slip",
+  "report_type": "Query Report",
+  "is_standard": "No",
+  "disabled": 0,
+  "add_total_row": 1,
+  "query": "SELECT\n    emp.ssnit_number AS \"SSNIT Number::130\",\n    ss.employee AS \"Employee ID:Link/Employee:110\",\n    ss.employee_name AS \"Full Name::200\",\n    ss.branch AS \"Branch::100\",\n    ss.designation AS \"Staff::160\",\n\n    IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='Basic Salary' THEN sd.amount END),0) AS \"Basic Salary:Currency:130\",\n\n    IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component='5.5%% SSNIT' THEN sd.amount END),0) AS \"Employee 5.5%%:Currency:130\",\n    IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='SSNIT Employer 13%%' THEN sd.amount END),0) AS \"Employer 13%%:Currency:130\",\n    IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='SSNIT 18.5%%' THEN sd.amount END),0) AS \"Total 18.5%%:Currency:130\",\n\n    ROUND(\n      IFNULL(SUM(CASE WHEN sd.parentfield='deductions' AND sd.salary_component='5.5%% SSNIT' THEN sd.amount END),0)\n    + IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='SSNIT Employer 13%%' THEN sd.amount END),0)\n    - IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='SSNIT 18.5%%' THEN sd.amount END),0)\n    , 2) AS \"Variance:Currency:100\"\n\nFROM `tabSalary Slip` ss\nINNER JOIN `tabEmployee` emp ON emp.name = ss.employee\nLEFT JOIN `tabSalary Detail` sd ON sd.parent = ss.name\nWHERE ss.docstatus = %(docstatus)s\n  AND ss.company = %(company)s\n  AND ss.start_date >= %(from_date)s\n  AND ss.end_date <= %(to_date)s\n  AND (%(branch)s = 'All' OR ss.branch = %(branch)s)\nGROUP BY ss.name, emp.ssnit_number, ss.employee, ss.employee_name, ss.branch, ss.designation\nORDER BY ss.branch, ss.employee_name",
+  "filters": [
+   {
+    "fieldname": "company",
+    "label": "Company",
+    "fieldtype": "Link",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "Company",
+    "default": "Betonsa Ghana Limited"
+   },
+   {
+    "fieldname": "from_date",
+    "label": "From Date",
+    "fieldtype": "Date",
+    "mandatory": 1,
+    "wildcard_filter": 0
+   },
+   {
+    "fieldname": "to_date",
+    "label": "To Date",
+    "fieldtype": "Date",
+    "mandatory": 1,
+    "wildcard_filter": 0
+   },
+   {
+    "fieldname": "docstatus",
+    "label": "Status",
+    "fieldtype": "Select",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "0\n1",
+    "default": "0"
+   },
+   {
+    "fieldname": "branch",
+    "label": "Branch",
+    "fieldtype": "Select",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "All\nAirport\nTema",
+    "default": "All"
+   }
+  ],
+  "roles": [
+   {
+    "role": "System Manager"
+   },
+   {
+    "role": "HR Manager"
+   },
+   {
+    "role": "HR User"
+   }
+  ],
+  "letter_head": "Betonsa"
+ },
+ {
+  "doctype": "Report",
+  "name": "SSNIT 5% & 13.5% Report",
+  "report_name": "SSNIT 5% & 13.5% Report",
+  "ref_doctype": "Salary Slip",
+  "report_type": "Query Report",
+  "is_standard": "No",
+  "disabled": 0,
+  "add_total_row": 1,
+  "query": "SELECT\n    emp.ssnit_number AS \"SSNIT Number::130\",\n    ss.employee AS \"Employee ID:Link/Employee:110\",\n    ss.employee_name AS \"Full Name::200\",\n    ss.branch AS \"Branch::100\",\n    ss.designation AS \"Staff::160\",\n\n    IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='Basic Salary' THEN sd.amount END),0) AS \"Basic Salary:Currency:130\",\n\n    ROUND(IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='Basic Salary' THEN sd.amount END),0) * 0.135, 2) AS \"Tier 1 - 13.5%%:Currency:130\",\n    ROUND(IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='Basic Salary' THEN sd.amount END),0) * 0.05, 2) AS \"Tier 2 - 5%%:Currency:130\",\n\n    ROUND(IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='Basic Salary' THEN sd.amount END),0) * 0.185, 2) AS \"Total 18.5%%:Currency:130\",\n\n    IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='SSNIT 18.5%%' THEN sd.amount END),0) AS \"Posted 18.5%%:Currency:130\",\n\n    ROUND(\n      ROUND(IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='Basic Salary' THEN sd.amount END),0) * 0.185, 2)\n    - IFNULL(SUM(CASE WHEN sd.parentfield='earnings' AND sd.salary_component='SSNIT 18.5%%' THEN sd.amount END),0)\n    , 2) AS \"Variance:Currency:100\"\n\nFROM `tabSalary Slip` ss\nINNER JOIN `tabEmployee` emp ON emp.name = ss.employee\nLEFT JOIN `tabSalary Detail` sd ON sd.parent = ss.name\nWHERE ss.docstatus = %(docstatus)s\n  AND ss.company = %(company)s\n  AND ss.start_date >= %(from_date)s\n  AND ss.end_date <= %(to_date)s\n  AND (%(branch)s = 'All' OR ss.branch = %(branch)s)\nGROUP BY ss.name, emp.ssnit_number, ss.employee, ss.employee_name, ss.branch, ss.designation\nORDER BY ss.branch, ss.employee_name",
+  "filters": [
+   {
+    "fieldname": "company",
+    "label": "Company",
+    "fieldtype": "Link",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "Company",
+    "default": "Betonsa Ghana Limited"
+   },
+   {
+    "fieldname": "from_date",
+    "label": "From Date",
+    "fieldtype": "Date",
+    "mandatory": 1,
+    "wildcard_filter": 0
+   },
+   {
+    "fieldname": "to_date",
+    "label": "To Date",
+    "fieldtype": "Date",
+    "mandatory": 1,
+    "wildcard_filter": 0
+   },
+   {
+    "fieldname": "docstatus",
+    "label": "Status",
+    "fieldtype": "Select",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "0\n1",
+    "default": "0"
+   },
+   {
+    "fieldname": "branch",
+    "label": "Branch",
+    "fieldtype": "Select",
+    "mandatory": 1,
+    "wildcard_filter": 0,
+    "options": "All\nAirport\nTema",
+    "default": "All"
+   }
+  ],
+  "roles": [
+   {
+    "role": "System Manager"
+   },
+   {
+    "role": "HR Manager"
+   },
+   {
+    "role": "HR User"
+   }
+  ],
+  "letter_head": "Betonsa"
+ }
+]

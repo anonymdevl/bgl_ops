@@ -1,0 +1,43 @@
+[
+ {
+  "doctype": "Dashboard Chart",
+  "name": "Daily Trip Pay Trend",
+  "chart_name": "Daily Trip Pay Trend",
+  "chart_type": "Sum",
+  "document_type": "Daily Trip Log",
+  "based_on": "log_date",
+  "value_based_on": "amount",
+  "timespan": "Last Month",
+  "time_interval": "Daily",
+  "type": "Bar",
+  "is_public": 1,
+  "color": "#d0700d",
+  "filters_json": "[[\"Daily Trip Log\", \"docstatus\", \"=\", 1, false]]"
+ },
+ {
+  "doctype": "Dashboard Chart",
+  "name": "Trip Pay by Site",
+  "chart_name": "Trip Pay by Site",
+  "chart_type": "Group By",
+  "document_type": "Daily Trip Log",
+  "group_by_type": "Sum",
+  "group_by_based_on": "branch",
+  "aggregate_function_based_on": "amount",
+  "type": "Donut",
+  "is_public": 1,
+  "filters_json": "[[\"Daily Trip Log\", \"docstatus\", \"=\", 1, false]]"
+ },
+ {
+  "doctype": "Dashboard Chart",
+  "name": "Loan Balance by Type",
+  "chart_name": "Loan Balance by Type",
+  "chart_type": "Group By",
+  "document_type": "Staff Loan Advance",
+  "group_by_type": "Sum",
+  "group_by_based_on": "loan_type",
+  "aggregate_function_based_on": "balance",
+  "type": "Donut",
+  "is_public": 1,
+  "filters_json": "[[\"Staff Loan Advance\", \"status\", \"=\", \"Active\", false]]"
+ }
+]

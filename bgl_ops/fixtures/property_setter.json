@@ -1,0 +1,361 @@
+[
+ {
+  "doctype": "Property Setter",
+  "name": "Payroll Entry-payroll_payable_account-default",
+  "doc_type": "Payroll Entry",
+  "doctype_or_field": "DocField",
+  "property": "default",
+  "property_type": "Text",
+  "value": "2120 - Payroll Payable - BGL",
+  "field_name": "payroll_payable_account"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Payroll Entry-payroll_frequency-default",
+  "doc_type": "Payroll Entry",
+  "doctype_or_field": "DocField",
+  "property": "default",
+  "property_type": "Text",
+  "value": "Monthly",
+  "field_name": "payroll_frequency"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Payroll Entry-employees-allow_bulk_edit",
+  "doc_type": "Payroll Entry",
+  "doctype_or_field": "DocField",
+  "property": "allow_bulk_edit",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "employees"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Salary Structure Assignment-employee_name-in_list_view",
+  "doc_type": "Salary Structure Assignment",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "employee_name"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Salary Structure Assignment-employee-in_list_view",
+  "doc_type": "Salary Structure Assignment",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "employee"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Salary Structure Assignment-salary_structure-in_list_view",
+  "doc_type": "Salary Structure Assignment",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "salary_structure"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Salary Structure Assignment-from_date-in_list_view",
+  "doc_type": "Salary Structure Assignment",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "0",
+  "field_name": "from_date"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Employee-main-field_order",
+  "doc_type": "Employee",
+  "doctype_or_field": "DocType",
+  "property": "field_order",
+  "property_type": "Data",
+  "value": "[\"basic_details_tab\", \"basic_information\", \"employee\", \"naming_series\", \"first_name\", \"middle_name\", \"last_name\", \"employee_name\", \"column_break_9\", \"gender\", \"date_of_birth\", \"salutation\", \"column_break1\", \"date_of_joining\", \"image\", \"status\", \"custom_no_of_days_suspended\", \"erpnext_user\", \"user_id\", \"create_user_permission\", \"column_break_xwnm\", \"create_user_automatically\", \"company_details_section\", \"company\", \"department\", \"employment_type\", \"employee_number\", \"column_break_25\", \"designation\", \"reports_to\", \"column_break_18\", \"branch\", \"grade\", \"contact_details\", \"cell_number\", \"column_break_40\", \"company_email\", \"personal_email\", \"column_break4\", \"prefered_contact_email\", \"prefered_email\", \"unsubscribed\", \"address_section\", \"current_address\", \"current_accommodation_type\", \"column_break_46\", \"permanent_address\", \"permanent_accommodation_type\", \"emergency_contact_details\", \"person_to_be_contacted\", \"column_break_55\", \"emergency_phone_number\", \"column_break_19\", \"relation\", \"attendance_and_leave_details\", \"attendance_device_id\", \"column_break_44\", \"holiday_list\", \"default_shift\", \"approvers_section\", \"expense_approver\", \"leave_approver\", \"column_break_45\", \"shift_request_approver\", \"salary_information\", \"ctc\", \"salary_currency\", \"salary_mode\", \"employee_advance_account\", \"salary_cb\", \"payroll_cost_center\", \"bank_details_section\", \"bank_name\", \"column_break_heye\", \"bank_ac_no\", \"iban\", \"personal_details\", \"marital_status\", \"family_background\", \"column_break6\", \"blood_group\", \"health_details\", \"health_insurance_section\", \"health_insurance_provider\", \"health_insurance_no\", \"passport_details_section\", \"passport_number\", \"valid_upto\", \"column_break_73\", \"date_of_issue\", \"place_of_issue\", \"profile_tab\", \"bio\", \"educational_qualification\", \"education\", \"previous_work_experience\", \"external_work_history\", \"history_in_company\", \"internal_work_history\", \"employment_details\", \"job_applicant\", \"scheduled_confirmation_date\", \"column_break_32\", \"final_confirmation_date\", \"contract_end_date\", \"col_break_22\", \"notice_number_of_days\", \"date_of_retirement\", \"exit\", \"resignation_letter_date\", \"relieving_date\", \"exit_interview_details\", \"held_on\", \"new_workplace\", \"column_break_99\", \"leave_encashed\", \"encashment_date\", \"feedback_section\", \"reason_for_leaving\", \"column_break_104\", \"feedback\", \"lft\", \"rgt\", \"old_parent\", \"connections_tab\"]"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Employee-employee_name-in_list_view",
+  "doc_type": "Employee",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "employee_name"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Employee-custom_no_of_days_suspended-in_list_view",
+  "doc_type": "Employee",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "0",
+  "field_name": "custom_no_of_days_suspended"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Employee-branch-in_list_view",
+  "doc_type": "Employee",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "branch"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Employee-department-in_list_view",
+  "doc_type": "Employee",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "department"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Employee-designation-in_list_view",
+  "doc_type": "Employee",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "designation"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Employee-employment_type-in_list_view",
+  "doc_type": "Employee",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "employment_type"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Leave Application-leave_type-link_filters",
+  "doc_type": "Leave Application",
+  "doctype_or_field": "DocField",
+  "property": "link_filters",
+  "property_type": "JSON",
+  "value": "[[\"Leave Type\",\"leave_type_name\",\"in\",[\"Paid Leave\",\"Maternity Leave\",\"Leave Without Pay\",\"Sick Leave\",\"Compensatory Off\",\"Casual Leave\"]]]",
+  "field_name": "leave_type"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Leave Allocation-employee_name-in_list_view",
+  "doc_type": "Leave Allocation",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "employee_name"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Leave Allocation-employee-in_list_view",
+  "doc_type": "Leave Allocation",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "employee"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Leave Allocation-leave_type-in_list_view",
+  "doc_type": "Leave Allocation",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "leave_type"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Leave Allocation-from_date-in_list_view",
+  "doc_type": "Leave Allocation",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "from_date"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Leave Allocation-to_date-in_list_view",
+  "doc_type": "Leave Allocation",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "to_date"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Leave Allocation-expired-in_list_view",
+  "doc_type": "Leave Allocation",
+  "doctype_or_field": "DocField",
+  "property": "in_list_view",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "expired"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Purchase Receipt-provisional_expense_account-hidden",
+  "doc_type": "Purchase Receipt",
+  "doctype_or_field": "DocField",
+  "property": "hidden",
+  "property_type": "Check",
+  "value": "1",
+  "field_name": "provisional_expense_account"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Take Home Allowance Split-percentage-label",
+  "doc_type": "Take Home Allowance Split",
+  "doctype_or_field": "DocField",
+  "property": "label",
+  "property_type": "Data",
+  "value": "% of Take Home",
+  "field_name": "percentage"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Take Home Allowance Split-salary_component-description",
+  "doc_type": "Take Home Allowance Split",
+  "doctype_or_field": "DocField",
+  "property": "description",
+  "property_type": "Text",
+  "value": "Earning components only. Salary Advance, Cubic, Absent and Loans are blocked because HR maintains those directly.",
+  "field_name": "salary_component"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Take Home Allowance Split-computed_amount-description",
+  "doc_type": "Take Home Allowance Split",
+  "doctype_or_field": "DocField",
+  "property": "description",
+  "property_type": "Text",
+  "value": "Filled in by Calculate. Percentage multiplied by the Target Take Home.",
+  "field_name": "computed_amount"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Take Home Planner-basic_percentage-label",
+  "doc_type": "Take Home Planner",
+  "doctype_or_field": "DocField",
+  "property": "label",
+  "property_type": "Data",
+  "value": "Basic as % of Take Home (optional)",
+  "field_name": "basic_percentage"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Take Home Planner-basic_percentage-description",
+  "doc_type": "Take Home Planner",
+  "doctype_or_field": "DocField",
+  "property": "description",
+  "property_type": "Text",
+  "value": "Optional. If set, Basic = this % of the Target Take Home. If left blank, the employee's existing assignment base is used instead.",
+  "field_name": "basic_percentage"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Take Home Planner-split_check-description",
+  "doc_type": "Take Home Planner",
+  "doctype_or_field": "DocField",
+  "property": "description",
+  "property_type": "Text",
+  "value": "Basic % plus all allowance %, as a share of Take Home. Because SSNIT and PAYE come off the gross, this normally needs to exceed 100% for net to reach the target.",
+  "field_name": "split_check"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Take Home Planner-target_take_home-description",
+  "doc_type": "Take Home Planner",
+  "doctype_or_field": "DocField",
+  "property": "description",
+  "property_type": "Text",
+  "value": "Net the employee should receive AFTER SSNIT and PAYE, but BEFORE Salary Advance, Loans, Absent and Damage. Those are imported separately by HR and are not part of this calculation.",
+  "field_name": "target_take_home"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Take Home Planner-sb_split-label",
+  "doc_type": "Take Home Planner",
+  "doctype_or_field": "DocField",
+  "property": "label",
+  "property_type": "Data",
+  "value": "Allowance Split (% of Take Home)",
+  "field_name": "sb_split"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Take Home Planner-solved_gross-label",
+  "doc_type": "Take Home Planner",
+  "doctype_or_field": "DocField",
+  "property": "label",
+  "property_type": "Data",
+  "value": "Gross Package",
+  "field_name": "solved_gross"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Take Home Planner-basic_days-description",
+  "doc_type": "Take Home Planner",
+  "doctype_or_field": "DocField",
+  "property": "description",
+  "property_type": "Text",
+  "value": "Optional. Leave equal to standard days for a full month. If fewer, Basic is prorated as days / standard working days. Allowances are never prorated.",
+  "field_name": "basic_days"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Take Home Planner-computed_net-description",
+  "doc_type": "Take Home Planner",
+  "doctype_or_field": "DocField",
+  "property": "description",
+  "property_type": "Text",
+  "value": "Gross Package less SSNIT and PAYE. Does NOT include Salary Advance, Loans, Absent or Damage, so the employee's actual bank payment may be lower.",
+  "field_name": "computed_net"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Take Home Planner-variance-description",
+  "doc_type": "Take Home Planner",
+  "doctype_or_field": "DocField",
+  "property": "description",
+  "property_type": "Text",
+  "value": "Computed Net minus Target Take Home. Warning only, never blocks. If negative, raise the percentages; if positive, lower them.",
+  "field_name": "variance"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Take Home Planner-standard_working_days-description",
+  "doc_type": "Take Home Planner",
+  "doctype_or_field": "DocField",
+  "property": "description",
+  "property_type": "Text",
+  "value": "Days in a full working month. Betonsa uses 22, which matches the Absent formula in the salary structure.",
+  "field_name": "standard_working_days"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Take Home Planner-status-description",
+  "doc_type": "Take Home Planner",
+  "doctype_or_field": "DocField",
+  "property": "description",
+  "property_type": "Text",
+  "value": "Draft = not calculated. Calculated = figures worked out, nothing written to payroll. Applied = assignment and additional salaries written to ERPNext.",
+  "field_name": "status"
+ }
+]

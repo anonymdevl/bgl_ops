@@ -1,0 +1,711 @@
+[
+ {
+  "doctype": "DocType",
+  "name": "Staff Loan Repayment",
+  "module": "BGL Ops",
+  "custom": 1,
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "allow_rename": 1,
+  "istable": 1,
+  "fields": [
+   {
+    "fieldname": "payment_date",
+    "label": "Date",
+    "fieldtype": "Date",
+    "in_list_view": 1,
+    "reqd": 1,
+    "columns": 2
+   },
+   {
+    "fieldname": "amount",
+    "label": "Amount",
+    "fieldtype": "Currency",
+    "in_list_view": 1,
+    "reqd": 1,
+    "columns": 2
+   },
+   {
+    "fieldname": "source",
+    "label": "Source",
+    "fieldtype": "Select",
+    "options": "Payroll Deduction\nCash\nBank\nOther",
+    "default": "Payroll Deduction",
+    "in_list_view": 1,
+    "columns": 2
+   },
+   {
+    "fieldname": "reference",
+    "label": "Reference",
+    "fieldtype": "Data",
+    "in_list_view": 1,
+    "columns": 3,
+    "description": "e.g. Salary Slip or Additional Salary ID"
+   },
+   {
+    "fieldname": "remarks",
+    "label": "Remarks",
+    "fieldtype": "Data",
+    "columns": 2
+   }
+  ]
+ },
+ {
+  "doctype": "DocType",
+  "name": "BGL Trip Rate",
+  "module": "BGL Ops",
+  "custom": 1,
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "allow_rename": 1,
+  "naming_rule": "Random",
+  "autoname": "hash",
+  "track_changes": 1,
+  "quick_entry": 1,
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "fields": [
+   {
+    "fieldname": "pay_group",
+    "label": "Pay Group",
+    "fieldtype": "Select",
+    "options": "Mixer Driver\nPump Driver\nPump Operator\nTrailer Driver\nPlant Operator\nChemical",
+    "reqd": 1,
+    "in_list_view": 1,
+    "in_standard_filter": 1,
+    "bold": 1
+   },
+   {
+    "fieldname": "site",
+    "label": "Site",
+    "fieldtype": "Select",
+    "options": "All\nAirport\nTema",
+    "default": "All",
+    "reqd": 1,
+    "in_list_view": 1,
+    "in_standard_filter": 1
+   },
+   {
+    "fieldname": "unit",
+    "label": "Unit",
+    "fieldtype": "Select",
+    "options": "Trip\nCubic\nFixed",
+    "reqd": 1,
+    "in_list_view": 1
+   },
+   {
+    "fieldname": "day_type",
+    "label": "Day Type",
+    "fieldtype": "Select",
+    "options": "Weekday\nSaturday",
+    "default": "Weekday",
+    "reqd": 1,
+    "in_list_view": 1
+   },
+   {
+    "fieldname": "rate",
+    "label": "Rate",
+    "fieldtype": "Currency",
+    "reqd": 1,
+    "in_list_view": 1
+   },
+   {
+    "fieldname": "cb1",
+    "fieldtype": "Column Break"
+   },
+   {
+    "fieldname": "effective_from",
+    "label": "Effective From",
+    "fieldtype": "Date",
+    "reqd": 1,
+    "in_list_view": 1
+   },
+   {
+    "fieldname": "effective_to",
+    "label": "Effective To (blank = still active)",
+    "fieldtype": "Date"
+   },
+   {
+    "fieldname": "is_active",
+    "label": "Active",
+    "fieldtype": "Check",
+    "default": "1",
+    "in_list_view": 1
+   },
+   {
+    "fieldname": "salary_component",
+    "label": "Feeds Salary Component",
+    "fieldtype": "Link",
+    "options": "Salary Component"
+   },
+   {
+    "fieldname": "sb1",
+    "fieldtype": "Section Break",
+    "label": "Notes"
+   },
+   {
+    "fieldname": "notes",
+    "label": "Notes",
+    "fieldtype": "Small Text"
+   }
+  ],
+  "permissions": [
+   {
+    "role": "System Manager",
+    "read": 1,
+    "write": 1,
+    "create": 1,
+    "delete": 1,
+    "report": 1,
+    "export": 1,
+    "print": 1,
+    "email": 1,
+    "share": 1
+   },
+   {
+    "role": "HR Manager",
+    "read": 1,
+    "write": 1,
+    "create": 1,
+    "delete": 1,
+    "report": 1,
+    "export": 1,
+    "print": 1,
+    "email": 1,
+    "share": 1
+   },
+   {
+    "role": "HR User",
+    "read": 1,
+    "write": 1,
+    "create": 1,
+    "report": 1,
+    "export": 1,
+    "print": 1
+   }
+  ]
+ },
+ {
+  "doctype": "DocType",
+  "name": "Daily Trip Log",
+  "module": "BGL Ops",
+  "custom": 1,
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "allow_rename": 1,
+  "naming_rule": "Expression (old style)",
+  "autoname": "TRIP-.YYYY.-.#####",
+  "is_submittable": 1,
+  "track_changes": 1,
+  "title_field": "employee_name",
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "fields": [
+   {
+    "fieldname": "log_date",
+    "label": "Trip Date",
+    "fieldtype": "Date",
+    "reqd": 1,
+    "default": "Today",
+    "in_list_view": 1,
+    "bold": 1,
+    "in_standard_filter": 1
+   },
+   {
+    "fieldname": "employee",
+    "label": "Driver / Operator",
+    "fieldtype": "Link",
+    "options": "Employee",
+    "reqd": 1,
+    "in_list_view": 1,
+    "in_standard_filter": 1
+   },
+   {
+    "fieldname": "employee_name",
+    "label": "Name",
+    "fieldtype": "Data",
+    "fetch_from": "employee.employee_name",
+    "read_only": 1,
+    "in_list_view": 1
+   },
+   {
+    "fieldname": "designation",
+    "label": "Designation",
+    "fieldtype": "Data",
+    "fetch_from": "employee.designation",
+    "read_only": 1
+   },
+   {
+    "fieldname": "branch",
+    "label": "Site (Branch)",
+    "fieldtype": "Link",
+    "options": "Branch",
+    "fetch_from": "employee.branch",
+    "read_only": 1,
+    "in_standard_filter": 1
+   },
+   {
+    "fieldname": "cb1",
+    "fieldtype": "Column Break"
+   },
+   {
+    "fieldname": "pay_group",
+    "label": "Pay Group",
+    "fieldtype": "Select",
+    "options": "Mixer Driver\nPump Driver\nPump Operator\nTrailer Driver\nPlant Operator\nChemical",
+    "reqd": 1,
+    "in_list_view": 1,
+    "in_standard_filter": 1
+   },
+   {
+    "fieldname": "unit",
+    "label": "Unit",
+    "fieldtype": "Select",
+    "options": "Trip\nCubic\nFixed",
+    "reqd": 1,
+    "read_only": 1
+   },
+   {
+    "fieldname": "day_type",
+    "label": "Day Type",
+    "fieldtype": "Select",
+    "options": "Weekday\nSaturday",
+    "default": "Weekday",
+    "reqd": 1,
+    "read_only": 1
+   },
+   {
+    "fieldname": "truck_no",
+    "label": "Truck / Car No",
+    "fieldtype": "Data"
+   },
+   {
+    "fieldname": "sb_qty",
+    "fieldtype": "Section Break",
+    "label": "Quantity & Costing"
+   },
+   {
+    "fieldname": "quantity",
+    "label": "Quantity",
+    "fieldtype": "Float",
+    "reqd": 1,
+    "in_list_view": 1,
+    "description": "Trips run, or cubic (m3) dispatched, for this driver on this day."
+   },
+   {
+    "fieldname": "cb2",
+    "fieldtype": "Column Break"
+   },
+   {
+    "fieldname": "rate_applied",
+    "label": "Rate Applied",
+    "fieldtype": "Currency",
+    "read_only": 1
+   },
+   {
+    "fieldname": "amount",
+    "label": "Amount",
+    "fieldtype": "Currency",
+    "read_only": 1,
+    "in_list_view": 1,
+    "bold": 1
+   },
+   {
+    "fieldname": "sb_more",
+    "fieldtype": "Section Break",
+    "label": "More"
+   },
+   {
+    "fieldname": "remarks",
+    "label": "Remarks",
+    "fieldtype": "Small Text"
+   },
+   {
+    "fieldname": "payroll_month",
+    "label": "Payroll Month",
+    "fieldtype": "Data",
+    "read_only": 1,
+    "description": "Auto: e.g. 2026-08"
+   },
+   {
+    "fieldname": "pulled_to_payroll",
+    "label": "Pulled to Payroll",
+    "fieldtype": "Check",
+    "read_only": 1,
+    "default": "0",
+    "no_copy": 1
+   }
+  ],
+  "permissions": [
+   {
+    "role": "System Manager",
+    "read": 1,
+    "write": 1,
+    "create": 1,
+    "delete": 1,
+    "submit": 1,
+    "cancel": 1,
+    "amend": 1,
+    "report": 1,
+    "export": 1,
+    "print": 1,
+    "email": 1,
+    "share": 1
+   },
+   {
+    "role": "HR Manager",
+    "read": 1,
+    "write": 1,
+    "create": 1,
+    "delete": 1,
+    "submit": 1,
+    "cancel": 1,
+    "amend": 1,
+    "report": 1,
+    "export": 1,
+    "print": 1,
+    "email": 1,
+    "share": 1
+   },
+   {
+    "role": "HR User",
+    "read": 1,
+    "write": 1,
+    "create": 1,
+    "submit": 1,
+    "cancel": 1,
+    "amend": 1,
+    "report": 1,
+    "export": 1,
+    "print": 1
+   }
+  ]
+ },
+ {
+  "doctype": "DocType",
+  "name": "Staff Loan Advance",
+  "module": "BGL Ops",
+  "custom": 1,
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "allow_rename": 1,
+  "naming_rule": "Expression (old style)",
+  "autoname": "LOAN-.YYYY.-.#####",
+  "track_changes": 1,
+  "title_field": "employee_name",
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "fields": [
+   {
+    "fieldname": "employee",
+    "label": "Employee",
+    "fieldtype": "Link",
+    "options": "Employee",
+    "reqd": 1,
+    "in_list_view": 1,
+    "in_standard_filter": 1
+   },
+   {
+    "fieldname": "employee_name",
+    "label": "Name",
+    "fieldtype": "Data",
+    "fetch_from": "employee.employee_name",
+    "read_only": 1,
+    "in_list_view": 1
+   },
+   {
+    "fieldname": "department",
+    "label": "Department",
+    "fieldtype": "Link",
+    "options": "Department",
+    "fetch_from": "employee.department",
+    "read_only": 1,
+    "in_standard_filter": 1
+   },
+   {
+    "fieldname": "designation",
+    "label": "Designation",
+    "fieldtype": "Data",
+    "fetch_from": "employee.designation",
+    "read_only": 1
+   },
+   {
+    "fieldname": "cb1",
+    "fieldtype": "Column Break"
+   },
+   {
+    "fieldname": "loan_type",
+    "label": "Type",
+    "fieldtype": "Select",
+    "options": "Loan\nSalary Advance\nOther",
+    "reqd": 1,
+    "default": "Loan",
+    "in_list_view": 1,
+    "in_standard_filter": 1
+   },
+   {
+    "fieldname": "status",
+    "label": "Status",
+    "fieldtype": "Select",
+    "options": "Active\nFully Paid\nWritten Off\nCancelled",
+    "default": "Active",
+    "read_only": 1,
+    "in_list_view": 1,
+    "in_standard_filter": 1
+   },
+   {
+    "fieldname": "sb_amt",
+    "fieldtype": "Section Break",
+    "label": "Amount & Schedule"
+   },
+   {
+    "fieldname": "principal",
+    "label": "Principal / Amount Taken",
+    "fieldtype": "Currency",
+    "reqd": 1,
+    "in_list_view": 1
+   },
+   {
+    "fieldname": "date_taken",
+    "label": "Date Taken",
+    "fieldtype": "Date",
+    "reqd": 1,
+    "default": "Today"
+   },
+   {
+    "fieldname": "cb2",
+    "fieldtype": "Column Break"
+   },
+   {
+    "fieldname": "expected_monthly",
+    "label": "Planned Monthly Deduction",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "expected_clear_date",
+    "label": "Expected Clear Date",
+    "fieldtype": "Date"
+   },
+   {
+    "fieldname": "sb_rep",
+    "fieldtype": "Section Break",
+    "label": "Repayments"
+   },
+   {
+    "fieldname": "repayments",
+    "label": "Repayments",
+    "fieldtype": "Table",
+    "options": "Staff Loan Repayment"
+   },
+   {
+    "fieldname": "sb_tot",
+    "fieldtype": "Section Break",
+    "label": "Balance"
+   },
+   {
+    "fieldname": "total_repaid",
+    "label": "Total Repaid",
+    "fieldtype": "Currency",
+    "read_only": 1,
+    "in_list_view": 1
+   },
+   {
+    "fieldname": "cb3",
+    "fieldtype": "Column Break"
+   },
+   {
+    "fieldname": "balance",
+    "label": "Outstanding Balance",
+    "fieldtype": "Currency",
+    "read_only": 1,
+    "in_list_view": 1,
+    "bold": 1
+   },
+   {
+    "fieldname": "sb_notes",
+    "fieldtype": "Section Break",
+    "label": "Details"
+   },
+   {
+    "fieldname": "reason",
+    "label": "Reason / Purpose",
+    "fieldtype": "Small Text"
+   },
+   {
+    "fieldname": "notes",
+    "label": "Notes",
+    "fieldtype": "Small Text"
+   }
+  ],
+  "permissions": [
+   {
+    "role": "System Manager",
+    "read": 1,
+    "write": 1,
+    "create": 1,
+    "delete": 1,
+    "report": 1,
+    "export": 1,
+    "print": 1,
+    "email": 1,
+    "share": 1
+   },
+   {
+    "role": "HR Manager",
+    "read": 1,
+    "write": 1,
+    "create": 1,
+    "delete": 1,
+    "report": 1,
+    "export": 1,
+    "print": 1,
+    "email": 1,
+    "share": 1
+   },
+   {
+    "role": "HR User",
+    "read": 1,
+    "write": 1,
+    "create": 1,
+    "report": 1,
+    "export": 1,
+    "print": 1
+   }
+  ]
+ },
+ {
+  "doctype": "DocType",
+  "name": "Leave Encashment Request",
+  "module": "BGL Ops",
+  "custom": 1,
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "allow_rename": 1,
+  "naming_rule": "Expression (old style)",
+  "autoname": "LENC-.YYYY.-.#####",
+  "track_changes": 1,
+  "title_field": "employee_name",
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "fields": [
+   {
+    "fieldname": "employee",
+    "label": "Employee",
+    "fieldtype": "Link",
+    "options": "Employee",
+    "reqd": 1,
+    "in_list_view": 1,
+    "in_standard_filter": 1
+   },
+   {
+    "fieldname": "employee_name",
+    "label": "Name",
+    "fieldtype": "Data",
+    "fetch_from": "employee.employee_name",
+    "read_only": 1,
+    "in_list_view": 1
+   },
+   {
+    "fieldname": "department",
+    "label": "Department",
+    "fieldtype": "Link",
+    "options": "Department",
+    "fetch_from": "employee.department",
+    "read_only": 1,
+    "in_standard_filter": 1
+   },
+   {
+    "fieldname": "cb1",
+    "fieldtype": "Column Break"
+   },
+   {
+    "fieldname": "leave_type",
+    "label": "Leave Type",
+    "fieldtype": "Link",
+    "options": "Leave Type",
+    "default": "Annual Leave",
+    "reqd": 1,
+    "in_list_view": 1,
+    "in_standard_filter": 1
+   },
+   {
+    "fieldname": "request_date",
+    "label": "Request Date",
+    "fieldtype": "Date",
+    "default": "Today",
+    "reqd": 1
+   },
+   {
+    "fieldname": "status",
+    "label": "Status",
+    "fieldtype": "Select",
+    "options": "Requested\nApproved\nPaid\nRejected",
+    "default": "Requested",
+    "reqd": 1,
+    "in_list_view": 1,
+    "in_standard_filter": 1
+   },
+   {
+    "fieldname": "sb1",
+    "fieldtype": "Section Break",
+    "label": "Details"
+   },
+   {
+    "fieldname": "days",
+    "label": "Days to Encash",
+    "fieldtype": "Float",
+    "reqd": 1,
+    "in_list_view": 1
+   },
+   {
+    "fieldname": "amount",
+    "label": "Amount (if known)",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "cb2",
+    "fieldtype": "Column Break"
+   },
+   {
+    "fieldname": "remarks",
+    "label": "Remarks",
+    "fieldtype": "Small Text"
+   }
+  ],
+  "permissions": [
+   {
+    "role": "System Manager",
+    "read": 1,
+    "write": 1,
+    "create": 1,
+    "delete": 1,
+    "report": 1,
+    "export": 1,
+    "print": 1,
+    "email": 1,
+    "share": 1
+   },
+   {
+    "role": "HR Manager",
+    "read": 1,
+    "write": 1,
+    "create": 1,
+    "delete": 1,
+    "report": 1,
+    "export": 1,
+    "print": 1,
+    "email": 1,
+    "share": 1
+   },
+   {
+    "role": "HR User",
+    "read": 1,
+    "write": 1,
+    "create": 1,
+    "report": 1,
+    "export": 1,
+    "print": 1
+   }
+  ]
+ }
+]

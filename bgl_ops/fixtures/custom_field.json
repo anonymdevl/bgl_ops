@@ -1,0 +1,345 @@
+[
+ {
+  "doctype": "Custom Field",
+  "name": "Daily Trip Log-salary_component",
+  "dt": "Daily Trip Log",
+  "fieldname": "salary_component",
+  "label": "Feeds Component",
+  "fieldtype": "Link",
+  "insert_after": "amount",
+  "options": "Salary Component",
+  "read_only": 1,
+  "in_standard_filter": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_no_of_days_suspended",
+  "dt": "Employee",
+  "fieldname": "custom_no_of_days_suspended",
+  "label": "No. of Days Suspended",
+  "fieldtype": "Data",
+  "insert_after": "status",
+  "depends_on": "eval: doc.status =='Suspended'"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-ssnit_number",
+  "dt": "Employee",
+  "fieldname": "ssnit_number",
+  "label": "SSNIT Number",
+  "fieldtype": "Data",
+  "insert_after": "company",
+  "description": "SSNIT member / social security number, used on statutory contribution returns."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_take_home_section",
+  "dt": "Employee",
+  "fieldname": "custom_take_home_section",
+  "label": "Take Home Planning",
+  "fieldtype": "Section Break",
+  "insert_after": "ctc"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_target_take_home",
+  "dt": "Employee",
+  "fieldname": "custom_target_take_home",
+  "label": "Target Take Home (before advances & loans)",
+  "fieldtype": "Currency",
+  "insert_after": "custom_take_home_section",
+  "bold": 1,
+  "description": "Net the employee should receive after SSNIT and PAYE, but before Salary Advance, Loans, Absent and Damage. Leave blank to exclude this employee from the month-end bulk run."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_basic_percentage",
+  "dt": "Employee",
+  "fieldname": "custom_basic_percentage",
+  "label": "Basic as % of Take Home (optional)",
+  "fieldtype": "Percent",
+  "insert_after": "custom_target_take_home",
+  "default": "40",
+  "description": "Optional. Leave blank to keep using the existing assignment base."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_thp_cb",
+  "dt": "Employee",
+  "fieldname": "custom_thp_cb",
+  "label": "",
+  "fieldtype": "Column Break",
+  "insert_after": "custom_basic_percentage"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_standard_working_days",
+  "dt": "Employee",
+  "fieldname": "custom_standard_working_days",
+  "label": "Standard Working Days",
+  "fieldtype": "Int",
+  "insert_after": "custom_thp_cb",
+  "default": "22",
+  "description": "Days in a full working month. Betonsa uses 22."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_thp_split_sb",
+  "dt": "Employee",
+  "fieldname": "custom_thp_split_sb",
+  "label": "Discretionary Allowance Split",
+  "fieldtype": "Section Break",
+  "insert_after": "custom_standard_working_days",
+  "description": "Each component is a straight percentage of the employee's Target Take Home. Because SSNIT and PAYE come off the gross, the percentages normally total more than 100% for net to reach the target."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_allowance_split",
+  "dt": "Employee",
+  "fieldname": "custom_allowance_split",
+  "label": "Allowance Split",
+  "fieldtype": "Table",
+  "insert_after": "custom_thp_split_sb",
+  "options": "Take Home Allowance Split"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Take Home Planner-salary_structure_input",
+  "dt": "Take Home Planner",
+  "fieldname": "salary_structure_input",
+  "label": "Salary Structure (for new employees)",
+  "fieldtype": "Link",
+  "insert_after": "effective_from",
+  "options": "Salary Structure",
+  "description": "Only needed when the employee has no existing Salary Structure Assignment yet."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_designation",
+  "dt": "Leave Application",
+  "fieldname": "custom_designation",
+  "label": "Designation",
+  "fieldtype": "Data",
+  "insert_after": "department",
+  "read_only": 1,
+  "fetch_from": "employee.designation"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_resume_date",
+  "dt": "Leave Application",
+  "fieldname": "custom_resume_date",
+  "label": "Resume Date (To Work)",
+  "fieldtype": "Date",
+  "insert_after": "to_date",
+  "allow_on_submit": 1,
+  "description": "First day back at work. Normally the day after the last day of leave - this is NOT the leave end date."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_receiving_section",
+  "dt": "Leave Application",
+  "fieldname": "custom_receiving_section",
+  "label": "2. Delivered To (Receiving)",
+  "fieldtype": "Section Break",
+  "insert_after": "custom_resume_date",
+  "collapsible": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_form_serial_no",
+  "dt": "Leave Application",
+  "fieldname": "custom_form_serial_no",
+  "label": "Form Serial No.",
+  "fieldtype": "Data",
+  "insert_after": "custom_receiving_section",
+  "allow_on_submit": 1,
+  "description": "Serial number printed/written on the paper form"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_security_received_date",
+  "dt": "Leave Application",
+  "fieldname": "custom_security_received_date",
+  "label": "Security Received Date",
+  "fieldtype": "Date",
+  "insert_after": "custom_form_serial_no",
+  "allow_on_submit": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_receiving_col",
+  "dt": "Leave Application",
+  "fieldname": "custom_receiving_col",
+  "label": "",
+  "fieldtype": "Column Break",
+  "insert_after": "custom_security_received_date"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_secretary_received_date",
+  "dt": "Leave Application",
+  "fieldname": "custom_secretary_received_date",
+  "label": "Secretary Received Date",
+  "fieldtype": "Date",
+  "insert_after": "custom_receiving_col",
+  "allow_on_submit": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_approval_section",
+  "dt": "Leave Application",
+  "fieldname": "custom_approval_section",
+  "label": "3. Approval & Comment",
+  "fieldtype": "Section Break",
+  "insert_after": "custom_secretary_received_date",
+  "collapsible": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_approver_comment",
+  "dt": "Leave Application",
+  "fieldname": "custom_approver_comment",
+  "label": "Approver Comment",
+  "fieldtype": "Small Text",
+  "insert_after": "custom_approval_section",
+  "allow_on_submit": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_approval_date",
+  "dt": "Leave Application",
+  "fieldname": "custom_approval_date",
+  "label": "Approval Date",
+  "fieldtype": "Date",
+  "insert_after": "custom_approver_comment",
+  "allow_on_submit": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_hr_section",
+  "dt": "Leave Application",
+  "fieldname": "custom_hr_section",
+  "label": "4. Human Resource Manager's Comment",
+  "fieldtype": "Section Break",
+  "insert_after": "custom_approval_date",
+  "collapsible": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_leave_days_bf",
+  "dt": "Leave Application",
+  "fieldname": "custom_leave_days_bf",
+  "label": "Leave Days B/F (Previous Yr)",
+  "fieldtype": "Float",
+  "insert_after": "custom_hr_section",
+  "read_only": 1,
+  "allow_on_submit": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_leave_days_entitled",
+  "dt": "Leave Application",
+  "fieldname": "custom_leave_days_entitled",
+  "label": "Leave Days Entitled This Year",
+  "fieldtype": "Float",
+  "insert_after": "custom_leave_days_bf",
+  "read_only": 1,
+  "allow_on_submit": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_leave_days_taken",
+  "dt": "Leave Application",
+  "fieldname": "custom_leave_days_taken",
+  "label": "Leave Days Taken This Year",
+  "fieldtype": "Float",
+  "insert_after": "custom_leave_days_entitled",
+  "read_only": 1,
+  "allow_on_submit": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_leave_days_remaining",
+  "dt": "Leave Application",
+  "fieldname": "custom_leave_days_remaining",
+  "label": "Total Leave Days Remaining",
+  "fieldtype": "Float",
+  "insert_after": "custom_leave_days_taken",
+  "read_only": 1,
+  "allow_on_submit": 1,
+  "bold": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_hr_col",
+  "dt": "Leave Application",
+  "fieldname": "custom_hr_col",
+  "label": "",
+  "fieldtype": "Column Break",
+  "insert_after": "custom_leave_days_remaining"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_proceed_on",
+  "dt": "Leave Application",
+  "fieldname": "custom_proceed_on",
+  "label": "Proceed on Leave / Leave Pay",
+  "fieldtype": "Select",
+  "insert_after": "custom_hr_col",
+  "options": "\nProceed on Leave\nLeave Pay\nBoth",
+  "allow_on_submit": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_contact_of_applicant",
+  "dt": "Leave Application",
+  "fieldname": "custom_contact_of_applicant",
+  "label": "Contact of Applicant",
+  "fieldtype": "Data",
+  "insert_after": "custom_proceed_on",
+  "fetch_from": "employee.cell_number",
+  "allow_on_submit": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_substituted_by",
+  "dt": "Leave Application",
+  "fieldname": "custom_substituted_by",
+  "label": "Substituted By",
+  "fieldtype": "Link",
+  "insert_after": "custom_contact_of_applicant",
+  "options": "Employee",
+  "allow_on_submit": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_actual_start_date",
+  "dt": "Leave Application",
+  "fieldname": "custom_actual_start_date",
+  "label": "Actual Start Date",
+  "fieldtype": "Date",
+  "insert_after": "custom_substituted_by",
+  "allow_on_submit": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_actual_resume_date",
+  "dt": "Leave Application",
+  "fieldname": "custom_actual_resume_date",
+  "label": "Actual Resume Date",
+  "fieldtype": "Date",
+  "insert_after": "custom_actual_start_date",
+  "allow_on_submit": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Leave Application-custom_hr_remarks",
+  "dt": "Leave Application",
+  "fieldname": "custom_hr_remarks",
+  "label": "HR Remarks",
+  "fieldtype": "Small Text",
+  "insert_after": "custom_actual_resume_date",
+  "allow_on_submit": 1
+ }
+]

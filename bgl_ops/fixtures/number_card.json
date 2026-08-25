@@ -1,0 +1,78 @@
+[
+ {
+  "doctype": "Number Card",
+  "name": "Trips This Month",
+  "label": "Trips This Month",
+  "type": "Document Type",
+  "document_type": "Daily Trip Log",
+  "function": "Sum",
+  "is_public": 1,
+  "show_percentage_stats": 1,
+  "stats_time_interval": "Daily",
+  "filters_json": "[[\"Daily Trip Log\", \"docstatus\", \"=\", 1, false], [\"Daily Trip Log\", \"unit\", \"=\", \"Trip\", false], [\"Daily Trip Log\", \"log_date\", \"Timespan\", \"this month\", false]]",
+  "aggregate_function_based_on": "quantity"
+ },
+ {
+  "doctype": "Number Card",
+  "name": "Cubic This Month (m3)",
+  "label": "Cubic This Month (m3)",
+  "type": "Document Type",
+  "document_type": "Daily Trip Log",
+  "function": "Sum",
+  "is_public": 1,
+  "show_percentage_stats": 1,
+  "stats_time_interval": "Daily",
+  "filters_json": "[[\"Daily Trip Log\", \"docstatus\", \"=\", 1, false], [\"Daily Trip Log\", \"unit\", \"=\", \"Cubic\", false], [\"Daily Trip Log\", \"log_date\", \"Timespan\", \"this month\", false]]",
+  "aggregate_function_based_on": "quantity"
+ },
+ {
+  "doctype": "Number Card",
+  "name": "Trip Pay This Month (GHS)",
+  "label": "Trip Pay This Month (GHS)",
+  "type": "Document Type",
+  "document_type": "Daily Trip Log",
+  "function": "Sum",
+  "is_public": 1,
+  "show_percentage_stats": 1,
+  "stats_time_interval": "Daily",
+  "filters_json": "[[\"Daily Trip Log\", \"docstatus\", \"=\", 1, false], [\"Daily Trip Log\", \"log_date\", \"Timespan\", \"this month\", false]]",
+  "aggregate_function_based_on": "amount"
+ },
+ {
+  "doctype": "Number Card",
+  "name": "Active Loans & Advances",
+  "label": "Active Loans & Advances",
+  "type": "Document Type",
+  "document_type": "Staff Loan Advance",
+  "function": "Count",
+  "is_public": 1,
+  "show_percentage_stats": 0,
+  "stats_time_interval": "Daily",
+  "filters_json": "[[\"Staff Loan Advance\", \"status\", \"=\", \"Active\", false]]"
+ },
+ {
+  "doctype": "Number Card",
+  "name": "Money Owed to Company (GHS)",
+  "label": "Money Owed to Company (GHS)",
+  "type": "Document Type",
+  "document_type": "Staff Loan Advance",
+  "function": "Sum",
+  "is_public": 1,
+  "show_percentage_stats": 0,
+  "stats_time_interval": "Daily",
+  "filters_json": "[[\"Staff Loan Advance\", \"status\", \"=\", \"Active\", false]]",
+  "aggregate_function_based_on": "balance"
+ },
+ {
+  "doctype": "Number Card",
+  "name": "Encash Requests Pending",
+  "label": "Encash Requests Pending",
+  "type": "Document Type",
+  "document_type": "Leave Encashment Request",
+  "function": "Count",
+  "is_public": 1,
+  "show_percentage_stats": 0,
+  "stats_time_interval": "Daily",
+  "filters_json": "[[\"Leave Encashment Request\", \"status\", \"=\", \"Requested\", false]]"
+ }
+]
