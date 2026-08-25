@@ -1,8 +1,8 @@
 app_name = "bgl_ops"
 app_title = "BGL Ops"
-app_publisher = "Powersoft"
+app_publisher = "Michael"
 app_description = "Trips & cubic tracking, staff loans, leave visibility and an executive command center for Betonsa Ghana Limited."
-app_email = "ai4powersoft@gmail.com"
+app_email = "michael@powersoftsystem.com"
 app_license = "Proprietary"
 
 # Target stack: Frappe v16 / ERPNext v16 / Frappe HR v16 (as on bgl.powersoftsystem.com)
@@ -67,7 +67,6 @@ fixtures = [
     {"dt": "Dashboard Chart", "filters": [["name", "in", [
         "Daily Trip Pay Trend", "Trip Pay by Site", "Loan Balance by Type",
     ]]]},
-    {"dt": "Workspace", "filters": [["name", "in", ["BGL Operations"]]]},
 ]
 
 website_route_rules = []
