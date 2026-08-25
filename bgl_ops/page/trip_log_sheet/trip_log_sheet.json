@@ -1,0 +1,15 @@
+{
+ "doctype": "Page",
+ "name": "trip-log-sheet",
+ "page_name": "trip-log-sheet",
+ "title": "Trip Log Sheet",
+ "icon": "octicon octicon-checklist",
+ "module": "BGL Ops",
+ "standard": "Yes",
+ "system_page": 0,
+ "roles": [
+  {"role": "HR User"},
+  {"role": "HR Manager"},
+  {"role": "System Manager"}
+ ]
+}

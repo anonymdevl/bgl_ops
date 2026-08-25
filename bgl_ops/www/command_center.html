@@ -24,21 +24,21 @@
 
   /* ---- telemetry backdrop ---- */
   .fx{position:fixed;inset:0;z-index:0;pointer-events:none}
-  .fx .grid{position:absolute;inset:0;
-    background-image:linear-gradient(rgba(120,150,200,.05) 1px,transparent 1px),
-      linear-gradient(90deg,rgba(120,150,200,.05) 1px,transparent 1px);
-    background-size:44px 44px;
-    mask-image:radial-gradient(ellipse 90% 70% at 50% 0%,#000 30%,transparent 75%)}
+  .fx canvas{position:absolute;inset:0;width:100%;height:100%;opacity:.85}
   .fx .aur{position:absolute;top:-30%;left:50%;width:1300px;height:800px;transform:translateX(-50%);
     background:radial-gradient(closest-side,rgba(240,160,75,.10),transparent 65%),
                radial-gradient(closest-side at 30% 60%,rgba(63,193,203,.08),transparent 60%),
                radial-gradient(closest-side at 72% 55%,rgba(154,150,232,.07),transparent 60%);
     filter:blur(10px);animation:drift 26s ease-in-out infinite alternate}
   @keyframes drift{from{transform:translateX(-54%) translateY(0)}to{transform:translateX(-46%) translateY(28px)}}
-  .fx .scan{position:absolute;left:0;right:0;height:130px;top:-140px;
-    background:linear-gradient(180deg,transparent,rgba(63,193,203,.05),transparent);
-    animation:scan 9s linear infinite}
-  @keyframes scan{from{top:-140px}to{top:110%}}
+  .fx .aur2{position:absolute;bottom:-40%;right:-15%;width:900px;height:700px;
+    background:radial-gradient(closest-side,rgba(63,193,203,.07),transparent 65%);
+    filter:blur(14px);animation:drift 34s ease-in-out infinite alternate-reverse}
+  .fx .beam{position:absolute;top:0;left:50%;width:640px;height:340px;transform:translateX(-50%);
+    background:radial-gradient(ellipse at 50% 0%,rgba(240,160,75,.13),transparent 70%);
+    animation:breathe 7s ease-in-out infinite}
+  @keyframes breathe{0%,100%{opacity:.55}50%{opacity:1}}
+  .fx .vig{position:absolute;inset:0;background:radial-gradient(ellipse 120% 100% at 50% 30%,transparent 55%,rgba(5,7,10,.55) 100%)}
 
   .shell{position:relative;z-index:1}
   .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
@@ -86,7 +86,7 @@
 
   .grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:15px}
   @media(max-width:860px){.grid2{grid-template-columns:1fr}}
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;
+  .panel{background:linear-gradient(165deg,rgba(26,33,48,.82),rgba(20,26,35,.9));backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:16px;
     padding:19px;box-shadow:var(--sh);margin:15px 0}
   .panel h3{margin:0 0 3px;font-size:15.5px;font-weight:600}
   .panel .cap{margin:0 0 14px;font-size:12.5px;color:var(--faint)}
@@ -176,7 +176,7 @@
 </style>
 </head>
 <body>
-<div class="fx"><div class="grid"></div><div class="aur"></div><div class="scan"></div></div>
+<div class="fx"><canvas id="net"></canvas><div class="aur"></div><div class="aur2"></div><div class="beam"></div><div class="vig"></div></div>
 <div class="shell">
 <header><div class="wrap">
   <div class="top">
@@ -196,7 +196,7 @@
 </div></header>
 
 <div class="wrap">
-  <h1 id="greet">Good day, {{ full_name }}</h1>
+  <h1 id="greet"><span id="greet-txt">Good day, {{ full_name }}</span> <span id="greet-ic" style="vertical-align:-2px;margin-left:4px"></span></h1>
   <p class="sub" id="dateline">Loading live figures...</p>
 
   <!-- ============ OVERVIEW ============ -->
@@ -405,7 +405,7 @@
   function api(method, args, cb, errcb){
     var fd=new URLSearchParams(); Object.keys(args||{}).forEach(function(k){ fd.append(k, args[k]); });
     fetch('/api/method/bgl_ops.api.'+method, {method:'POST', body:fd,
-      headers:{'X-Frappe-CSRF-Token': (window.frappe && frappe.csrf_token) || '{{ csrf_token }}'}})
+      headers:{'X-Frappe-CSRF-Token': '{{ csrf_token }}'}})
       .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
       .then(function(x){ if(x.ok && x.j.message!==undefined) cb(x.j.message);
         else (errcb||toast)((x.j._server_messages? 'Server rejected the request' : 'Request failed')); })
@@ -415,7 +415,11 @@
   // greeting + tabs
   var h=new Date().getHours();
   var g = h<12 ? 'Good morning' : (h<17 ? 'Good afternoon' : 'Good evening');
-  el('greet').textContent = g + ', ' + el('greet').textContent.replace(/^Good day, /,'');
+  el('greet-txt').textContent = g + ', ' + el('greet-txt').textContent.replace(/^Good day, /,'');
+  var IC_SUN='<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#f6bd7a" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2" fill="rgba(246,189,122,.25)"/><path d="M12 2.5v2.4m0 14.2v2.4M4.9 4.9l1.7 1.7m10.8 10.8l1.7 1.7M2.5 12h2.4m14.2 0h2.4M4.9 19.1l1.7-1.7m10.8-10.8l1.7-1.7"/></svg>';
+  var IC_DUSK='<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#f0a04b" stroke-width="2" stroke-linecap="round"><path d="M17 18a5 5 0 0 0-10 0" fill="rgba(240,160,75,.2)"/><path d="M12 9V5m-7.7 8.3l1.7 1.7m13.7-1.7l-1.7 1.7M2 18h2m16 0h2M3 22h18"/></svg>';
+  var IC_MOON='<svg width="28" height="28" viewBox="0 0 24 24" fill="rgba(154,150,232,.28)" stroke="#9a96e8" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+  el('greet-ic').innerHTML = h<12 ? IC_SUN : (h<17 ? IC_DUSK : IC_MOON);
   var tabs=document.querySelectorAll('.tab');
   tabs.forEach(function(t){ t.addEventListener('click', function(){
     tabs.forEach(function(x){ x.classList.remove('on'); }); t.classList.add('on');
@@ -557,6 +561,39 @@
   }
   load();
   setInterval(load, 300000);
+
+  // ---- constellation backdrop ----
+  (function(){
+    var cv=el('net'); if(!cv) return;
+    if(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches){ cv.remove(); return; }
+    var cx=cv.getContext('2d'), W, H, P=[];
+    function size(){ W=cv.width=innerWidth; H=cv.height=innerHeight; }
+    size(); addEventListener('resize', size);
+    var N=Math.min(90, Math.round(innerWidth/16));
+    for(var i=0;i<N;i++) P.push({x:Math.random()*innerWidth, y:Math.random()*innerHeight,
+      vx:(Math.random()-.5)*.28, vy:(Math.random()-.5)*.28, r:Math.random()*1.6+.6,
+      c: Math.random()<.75 ? '240,160,75' : (Math.random()<.5 ? '63,193,203' : '154,150,232')});
+    function tick(){
+      cx.clearRect(0,0,W,H);
+      for(var i=0;i<P.length;i++){
+        var p=P[i];
+        p.x+=p.vx; p.y+=p.vy;
+        if(p.x<0||p.x>W) p.vx*=-1; if(p.y<0||p.y>H) p.vy*=-1;
+        cx.beginPath(); cx.arc(p.x,p.y,p.r,0,6.283);
+        cx.fillStyle='rgba('+p.c+',.55)'; cx.fill();
+        for(var j=i+1;j<P.length;j++){
+          var q=P[j], dx=p.x-q.x, dy=p.y-q.y, d2=dx*dx+dy*dy;
+          if(d2<15000){
+            cx.beginPath(); cx.moveTo(p.x,p.y); cx.lineTo(q.x,q.y);
+            cx.strokeStyle='rgba('+p.c+','+(0.13*(1-d2/15000)).toFixed(3)+')';
+            cx.lineWidth=1; cx.stroke();
+          }
+        }
+      }
+      requestAnimationFrame(tick);
+    }
+    tick();
+  })();
 
   // ============ log sheet ============
   var SHEET=null, DIRTY={}, TRUCKS={};

@@ -11,4 +11,5 @@ def get_context(context):
                      frappe.PermissionError)
     context.no_cache = 1
     context.full_name = frappe.utils.get_fullname(frappe.session.user)
+    context.csrf_token = frappe.sessions.get_csrf_token()
     return context
