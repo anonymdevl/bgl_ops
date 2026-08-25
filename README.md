@@ -25,6 +25,11 @@ NOTES
   if smarterp is absent.
 - The "Betonsa" letter head and report logos reference /files/betonsa_logo.jpeg.
   On a fresh site, upload that file once (or the logo will not render).
+- The "BGL Vehicle" master (fleet numbers incl. marketer cars/pickups) is
+  site-resident by design and is intentionally NOT in the doctype fixtures:
+  re-importing doctype fixtures drops and recreates their tables, which would
+  erase vehicle records. For the same reason, NEVER edit fixtures/doctype.json
+  on a live installation - add new fields via Custom Field fixtures instead.
 - The BGL Trip Rate seed data (the confirmed rates) lives in the SITE, not in
   fixtures, by design: rates are operational data HR maintains.
 

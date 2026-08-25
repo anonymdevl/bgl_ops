@@ -93,7 +93,7 @@
   {
    "type": "Card Break",
    "label": "Trips & Cubic",
-   "link_count": 4
+   "link_count": 5
   },
   {
    "type": "Link",
@@ -120,6 +120,12 @@
    "link_to": "BGL Trips - Yesterday",
    "label": "Trips - Yesterday",
    "is_query_report": 1
+  },
+  {
+   "type": "Link",
+   "link_type": "DocType",
+   "link_to": "BGL Vehicle",
+   "label": "Vehicle List"
   },
   {
    "type": "Card Break",
@@ -159,5 +165,7 @@
  ],
  "roles": [],
  "quick_lists": [],
- "custom_blocks": []
+ "custom_blocks": [],
+ "type": "Workspace",
+ "link_type": "DocType"
 }

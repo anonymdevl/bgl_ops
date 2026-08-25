@@ -19,6 +19,7 @@ fixtures = [
     {"dt": "Custom Field", "filters": [["name", "in", [
         "Daily Trip Log-salary_component",
         "Employee-custom_no_of_days_suspended", "Employee-ssnit_number",
+        "Employee-custom_truck_no",
         "Employee-custom_take_home_section", "Employee-custom_target_take_home",
         "Employee-custom_basic_percentage", "Employee-custom_thp_cb",
         "Employee-custom_standard_working_days", "Employee-custom_thp_split_sb",
