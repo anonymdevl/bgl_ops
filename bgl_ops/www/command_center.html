@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BGL Command Center</title>
+<style>
+  :root{
+    --bg:#0b0e13; --bg2:#0e1219; --panel:#141a23; --panel2:#1a2130; --line:#232c3d;
+    --ink:#edf1f7; --muted:#94a0b4; --faint:#5f6b80;
+    --amber:#f0a04b; --amber2:#f6bd7a; --amberS:rgba(240,160,75,.12);
+    --teal:#3fc1cb; --tealS:rgba(63,193,203,.12);
+    --violet:#9a96e8; --violetS:rgba(154,150,232,.12);
+    --good:#4ecb8d; --goodS:rgba(78,203,141,.12);
+    --bad:#e8756b; --badS:rgba(232,117,107,.12);
+    --glow:0 0 22px rgba(240,160,75,.16);
+    --sh:0 1px 2px rgba(0,0,0,.5),0 10px 34px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+  /* ---- telemetry backdrop ---- */
+  .fx{position:fixed;inset:0;z-index:0;pointer-events:none}
+  .fx .grid{position:absolute;inset:0;
+    background-image:linear-gradient(rgba(120,150,200,.05) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(120,150,200,.05) 1px,transparent 1px);
+    background-size:44px 44px;
+    mask-image:radial-gradient(ellipse 90% 70% at 50% 0%,#000 30%,transparent 75%)}
+  .fx .aur{position:absolute;top:-30%;left:50%;width:1300px;height:800px;transform:translateX(-50%);
+    background:radial-gradient(closest-side,rgba(240,160,75,.10),transparent 65%),
+               radial-gradient(closest-side at 30% 60%,rgba(63,193,203,.08),transparent 60%),
+               radial-gradient(closest-side at 72% 55%,rgba(154,150,232,.07),transparent 60%);
+    filter:blur(10px);animation:drift 26s ease-in-out infinite alternate}
+  @keyframes drift{from{transform:translateX(-54%) translateY(0)}to{transform:translateX(-46%) translateY(28px)}}
+  .fx .scan{position:absolute;left:0;right:0;height:130px;top:-140px;
+    background:linear-gradient(180deg,transparent,rgba(63,193,203,.05),transparent);
+    animation:scan 9s linear infinite}
+  @keyframes scan{from{top:-140px}to{top:110%}}
+
+  .shell{position:relative;z-index:1}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+
+  /* ---- header ---- */
+  header{position:sticky;top:0;z-index:10;background:rgba(11,14,19,.82);
+    backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+  .top{display:flex;align-items:center;gap:14px;padding:13px 0}
+  .logo{width:42px;height:42px;border-radius:12px;flex:none;
+    background:linear-gradient(135deg,var(--amber),var(--amber2));
+    display:grid;place-items:center;color:#131721;font-weight:800;font-size:18px;box-shadow:var(--glow)}
+  .bw .b{font-weight:700;font-size:15.5px;letter-spacing:.01em}
+  .bw .s{font-size:12px;color:var(--faint)}
+  .spacer{flex:1}
+  .live{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);
+    background:var(--panel);border:1px solid var(--line);padding:6px 14px;border-radius:100px}
+  .pulse{width:8px;height:8px;border-radius:50%;background:var(--good);animation:pp 2s infinite}
+  @keyframes pp{0%{box-shadow:0 0 0 0 rgba(78,203,141,.55)}70%{box-shadow:0 0 0 8px rgba(78,203,141,0)}100%{box-shadow:0 0 0 0 rgba(78,203,141,0)}}
+  .tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
+  .tab{white-space:nowrap;border:none;background:transparent;color:var(--muted);font:inherit;
+    font-weight:600;font-size:14px;padding:11px 16px;cursor:pointer;
+    border-bottom:2px solid transparent;transition:color .15s}
+  .tab:hover{color:var(--ink)}
+  .tab.on{color:var(--amber);border-bottom-color:var(--amber);text-shadow:0 0 18px rgba(240,160,75,.5)}
+
+  h1{font-size:clamp(23px,3.4vw,31px);margin:26px 0 3px;font-weight:700;letter-spacing:-.01em}
+  .sub{color:var(--muted);margin:0 0 18px;font-size:14.5px}
+
+  section.view{display:none;padding:4px 0 80px;animation:rise .45s cubic-bezier(.2,.7,.3,1)}
+  section.view.on{display:block}
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:14px;margin:14px 0}
+  .kpi{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);
+    border-radius:16px;padding:18px;box-shadow:var(--sh);position:relative;overflow:hidden}
+  .kpi::after{content:"";position:absolute;left:0;right:0;top:0;height:1px;
+    background:linear-gradient(90deg,transparent,rgba(240,160,75,.5),transparent)}
+  .kpi .ic{position:absolute;right:14px;top:14px;width:34px;height:34px;border-radius:10px;display:grid;place-items:center}
+  .i-a{background:var(--amberS);color:var(--amber)} .i-t{background:var(--tealS);color:var(--teal)}
+  .i-v{background:var(--violetS);color:var(--violet)} .i-g{background:var(--goodS);color:var(--good)}
+  .kpi .lab{font-size:12.5px;color:var(--muted);font-weight:600}
+  .kpi .val{font-family:'Space Grotesk','Inter',sans-serif;font-size:31px;font-weight:700;margin:8px 0 2px;line-height:1}
+  .kpi .s2{font-size:12px;color:var(--faint)}
+  .kpi .s2 b{color:var(--good)}
+
+  .grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:15px}
+  @media(max-width:860px){.grid2{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    padding:19px;box-shadow:var(--sh);margin:15px 0}
+  .panel h3{margin:0 0 3px;font-size:15.5px;font-weight:600}
+  .panel .cap{margin:0 0 14px;font-size:12.5px;color:var(--faint)}
+  .phead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  .twrap{overflow-x:auto}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  thead th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:600}
+  tbody tr:last-child td{border-bottom:none}
+  td.r,th.r{text-align:right}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 10px;border-radius:100px}
+  .t-act{background:var(--amberS);color:var(--amber)} .t-paid{background:var(--goodS);color:var(--good)}
+  .t-info{background:var(--tealS);color:var(--teal)} .t-new{background:var(--violetS);color:var(--violet)}
+  .t-bad{background:var(--badS);color:var(--bad)}
+
+  .seg{display:inline-flex;background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:3px}
+  .seg button{border:none;background:transparent;font:inherit;font-size:12.5px;font-weight:600;
+    color:var(--muted);padding:5px 13px;border-radius:8px;cursor:pointer}
+  .seg button.on{background:var(--panel2);color:var(--amber)}
+
+  .bars{display:flex;flex-direction:column;gap:10px}
+  .bar{display:grid;grid-template-columns:110px 1fr 56px;align-items:center;gap:10px;font-size:12.5px}
+  .bar .nm{color:var(--muted)}
+  .bar .t{height:20px;background:var(--bg2);border-radius:7px;overflow:hidden}
+  .bar .f{height:100%;border-radius:7px;background:linear-gradient(90deg,var(--amber),var(--amber2));
+    box-shadow:0 0 14px rgba(240,160,75,.35);transition:width .7s cubic-bezier(.2,.7,.3,1)}
+  .bar .v{text-align:right;font-weight:700;font-family:'Space Grotesk'}
+
+  .trend{display:flex;align-items:flex-end;gap:4px;height:88px;padding-top:8px}
+  .trend .tb{flex:1;background:linear-gradient(180deg,var(--amber2),var(--amber));
+    border-radius:4px 4px 0 0;min-height:3px;position:relative;box-shadow:0 0 12px rgba(240,160,75,.25)}
+  .trend .tb:hover::after{content:attr(data-t);position:absolute;bottom:calc(100% + 6px);left:50%;
+    transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    font-size:11px;padding:3px 9px;border-radius:7px;white-space:nowrap;z-index:5}
+
+  .donutwrap{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+  .donut{width:150px;height:150px;border-radius:50%;flex:none;position:relative}
+  .donut::after{content:"";position:absolute;inset:22px;background:var(--panel);border-radius:50%}
+  .donut .c{position:absolute;inset:0;display:grid;place-content:center;text-align:center;z-index:1}
+  .donut .c b{font-family:'Space Grotesk';font-size:21px;display:block;line-height:1.05}
+  .donut .c span{font-size:10.5px;color:var(--faint)}
+  .legend{display:flex;flex-direction:column;gap:9px;font-size:13px;min-width:210px}
+  .legend .li{display:flex;align-items:center;gap:9px}
+  .legend .sw{width:11px;height:11px;border-radius:3px;flex:none}
+  .legend .li b{margin-left:auto;font-family:'Space Grotesk'}
+
+  .links a{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:100px;
+    padding:7px 15px;margin:3px 6px 3px 0;font-size:13px;color:var(--ink);text-decoration:none;font-weight:600}
+  .links a:hover{border-color:var(--amber);color:var(--amber);box-shadow:var(--glow)}
+  .empty{color:var(--faint);font-size:13px;padding:8px 0}
+  .note{font-size:12.5px;color:var(--faint);margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
+  .note b{color:var(--muted)}
+
+  /* ---- log sheet ---- */
+  .sheetbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  .sheetbar select,.sheetbar input[type=month]{background:var(--bg2);border:1px solid var(--line);
+    color:var(--ink);border-radius:9px;padding:7px 11px;font:inherit;font-size:13.5px}
+  .btn{border:none;border-radius:10px;padding:9px 18px;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
+  .btn-p{background:linear-gradient(135deg,var(--amber),var(--amber2));color:#131721;box-shadow:var(--glow)}
+  .btn-p:disabled{opacity:.5;cursor:default}
+  .btn-g{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+  .sheetwrap{overflow:auto;max-height:64vh;border:1px solid var(--line);border-radius:12px;background:var(--bg2)}
+  table.sheet{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%}
+  .sheet th,.sheet td{border-bottom:1px solid var(--line);border-right:1px solid rgba(35,44,61,.6);padding:0}
+  .sheet thead th{position:sticky;top:0;background:var(--panel2);z-index:3;padding:6px 6px;
+    font-size:10.5px;text-align:center;color:var(--muted)}
+  .sheet thead th.sat{color:var(--amber)} .sheet thead th.sun{color:var(--bad)}
+  .sheet td.emp,.sheet th.emp{position:sticky;left:0;background:var(--panel);z-index:2;
+    padding:5px 10px;min-width:190px;text-align:left;font-weight:600;font-size:12px}
+  .sheet thead th.emp{z-index:4}
+  .sheet td.trk,.sheet th.trk{position:sticky;left:190px;background:var(--panel);z-index:2;min-width:74px}
+  .sheet thead th.trk{z-index:4}
+  .sheet td.grp{color:var(--faint);font-size:10.5px;font-weight:400}
+  .sheet input.q{width:44px;border:none;background:transparent;color:var(--ink);
+    text-align:center;font:inherit;font-size:12.5px;padding:6px 2px;outline:none}
+  .sheet input.q:focus{background:var(--amberS)}
+  .sheet input.q.dirty{background:rgba(240,160,75,.22);border-radius:0}
+  .sheet input.q:disabled{color:var(--good);font-weight:700}
+  .sheet input.trkin{width:64px;border:none;background:transparent;color:var(--teal);
+    font:inherit;font-size:12px;padding:6px 6px;outline:none}
+  .sheet input.trkin:focus{background:var(--tealS)}
+  .sheet td.tot{font-weight:700;color:var(--amber);text-align:center;padding:5px 8px;background:var(--panel)}
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:50;
+    background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 22px;
+    font-size:13.5px;box-shadow:var(--sh);display:none}
+</style>
+</head>
+<body>
+<div class="fx"><div class="grid"></div><div class="aur"></div><div class="scan"></div></div>
+<div class="shell">
+<header><div class="wrap">
+  <div class="top">
+    <div class="logo">B</div>
+    <div class="bw"><div class="b">Betonsa Ghana Limited</div>
+      <div class="s">Executive HR &amp; Operations Command Center</div></div>
+    <span class="spacer"></span>
+    <span class="live"><span class="pulse"></span>Live | ERPNext</span>
+  </div>
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-v="overview">Overview</button>
+    <button class="tab" data-v="trips">Trips &amp; Cubic</button>
+    <button class="tab" data-v="sheet">Log Sheet</button>
+    <button class="tab" data-v="loans">Loans &amp; Advances</button>
+    <button class="tab" data-v="leave">Leave</button>
+  </div>
+</div></header>
+
+<div class="wrap">
+  <h1 id="greet">Good day, {{ full_name }}</h1>
+  <p class="sub" id="dateline">Loading live figures...</p>
+
+  <!-- ============ OVERVIEW ============ -->
+  <section class="view on" id="v-overview">
+    <div class="kpis">
+      <div class="kpi"><div class="ic i-a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
+        <div class="lab">Field crew</div><div class="val" id="k-crew">-</div>
+        <div class="s2"><span id="k-crew2">-</span></div></div>
+      <div class="kpi"><div class="ic i-t"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 9h1m4 0h1M9 13h1m4 0h1M9 17h1m4 0h1"/></svg></div>
+        <div class="lab">Active sites</div><div class="val" id="k-sites">2</div>
+        <div class="s2" id="k-sites2">-</div></div>
+      <div class="kpi"><div class="ic i-v"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg></div>
+        <div class="lab">Staff owing (payroll)</div><div class="val" id="k-owing">-</div>
+        <div class="s2" id="k-owing2">-</div></div>
+      <div class="kpi"><div class="ic i-g"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 20A7 7 0 0 1 4 13c0-5 4-9 10-10 3-.5 6 0 6 0s.5 3 0 6c-1 6-5 10-10 10z"/></svg></div>
+        <div class="lab">On leave today</div><div class="val" id="k-onleave">-</div>
+        <div class="s2" id="k-onleave2">-</div></div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <div class="phead"><h3>Field crew by group</h3>
+          <div class="seg" id="seg-crew"><button class="on" data-s="All">All</button><button data-s="Airport">Airport</button><button data-s="Tema">Tema</button></div>
+        </div>
+        <div class="bars" id="crewbars" style="margin-top:14px"></div>
+        <div class="note"><b>Live from ERPNext</b> - grouped by Designation, split by Branch. This is who the Log Sheet captures daily.</div>
+      </div>
+      <div class="panel">
+        <h3>What needs your eye</h3>
+        <p class="cap">Auto-surfaced signals</p>
+        <div class="twrap"><table><tbody id="signals"></tbody></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TRIPS ============ -->
+  <section class="view" id="v-trips">
+    <div class="kpis">
+      <div class="kpi"><div class="ic i-a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
+        <div class="lab">Trips this month</div><div class="val" id="t-trips">-</div><div class="s2" id="t-trips2">-</div></div>
+      <div class="kpi"><div class="ic i-t"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8l-9-5-9 5v8l9 5 9-5z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg></div>
+        <div class="lab">Cubic this month (m3)</div><div class="val" id="t-cubic">-</div><div class="s2" id="t-cubic2">-</div></div>
+      <div class="kpi"><div class="ic i-v"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg></div>
+        <div class="lab">Logs today</div><div class="val" id="t-today">-</div><div class="s2" id="t-today2">-</div></div>
+      <div class="kpi"><div class="ic i-g"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg></div>
+        <div class="lab">Pay earned (GHS)</div><div class="val" id="t-pay">-</div><div class="s2">this month, trips + cubic</div></div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <h3>Last 14 days</h3><p class="cap">Daily trip and cubic pay (GHS) - hover for detail</p>
+        <div class="trend" id="trend"><div class="empty">Populates once daily logging begins - use the Log Sheet tab.</div></div>
+      </div>
+      <div class="panel">
+        <h3>Yesterday by site</h3><p class="cap" id="ycap">-</p>
+        <div class="twrap"><table>
+          <thead><tr><th>Site</th><th class="r">Qty</th><th class="r">Value (GHS)</th></tr></thead>
+          <tbody id="ybody"><tr><td colspan="3" class="empty">No trips logged yesterday yet.</td></tr></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>This month by site and group</h3><p class="cap">Value of trips and cubic logged</p>
+      <div class="bars" id="gbars"><div class="empty">Populates once daily logging begins.</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="phead"><h3>Rate engine</h3><span class="tag t-info">live from BGL Trip Rate</span></div>
+      <p class="cap">Change a rate in ERPNext and every future log uses it - nothing hard-coded.</p>
+      <div class="twrap"><table>
+        <thead><tr><th>Pay group</th><th>Site</th><th>Day</th><th class="r">Rate</th><th>Feeds component</th></tr></thead>
+        <tbody id="ratebody"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ============ LOG SHEET ============ -->
+  <section class="view" id="v-sheet">
+    <div class="panel">
+      <div class="phead"><h3>Bulk trip sheet</h3><span class="tag t-new">the paper sheet, digital</span></div>
+      <p class="cap">Pick site and month, type each driver's trips or cubic per day, Save Drafts. Submitted (locked) days show green. Vehicle numbers save to the employee and unknown ones are added to the Vehicle List automatically.</p>
+      <div class="sheetbar">
+        <select id="sh-site"><option>Airport</option><option>Tema</option></select>
+        <input type="month" id="sh-month">
+        <button class="btn btn-g" id="sh-load">Load Sheet</button>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn btn-p" id="sh-save" disabled>Save Drafts</button>
+        <button class="btn btn-g" id="sh-submit" disabled>Submit Month (lock)</button>
+      </div>
+      <div class="sheetwrap"><table class="sheet" id="sheet"><tbody>
+        <tr><td class="empty" style="padding:16px">Choose a site and month, then Load Sheet.</td></tr>
+      </tbody></table></div>
+      <div class="note"><b>How it costs:</b> each day is priced server-side from the rate engine (site, group, weekday vs Saturday). Saving creates draft Daily Trip Logs; Submit Month locks them for payroll. Sundays are highlighted red; enter them only if worked (weekday rate applies unless you add an off-day rate).</div>
+    </div>
+  </section>
+
+  <!-- ============ LOANS ============ -->
+  <section class="view" id="v-loans">
+    <div class="kpis">
+      <div class="kpi"><div class="ic i-v"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg></div>
+        <div class="lab">Ledger balance (GHS)</div><div class="val" id="l-bal">-</div><div class="s2" id="l-bal2">-</div></div>
+      <div class="kpi"><div class="ic i-a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V10M19 21V10M3 10h18M5 6l7-3 7 3M9 14v3M15 14v3"/></svg></div>
+        <div class="lab">Loans (payroll)</div><div class="val" id="l-loanamt">-</div><div class="s2" id="l-loanamt2">-</div></div>
+      <div class="kpi"><div class="ic i-t"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+        <div class="lab">Advances (payroll)</div><div class="val" id="l-advamt">-</div><div class="s2" id="l-advamt2">-</div></div>
+      <div class="kpi"><div class="ic i-g"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg></div>
+        <div class="lab">Recovered / month</div><div class="val" id="l-rec">-</div><div class="s2">GHS, loans + advances</div></div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <h3>Monthly recovery split</h3><p class="cap">Live from payroll deductions (most recent run)</p>
+        <div class="donutwrap">
+          <div class="donut" id="l-donut"><div class="c"><b id="l-donut-v">-</b><span>GHS / month</span></div></div>
+          <div class="legend" id="l-legend"></div>
+        </div>
+        <div class="note" id="l-note"><b>Interim view.</b> These figures come from payroll deduction entries. Once the opening loan list is seeded into the ledger, true principal and balance per person appear below.</div>
+      </div>
+      <div class="panel">
+        <h3>Ledger by type</h3><p class="cap">Staff Loan / Advance records</p>
+        <div class="twrap"><table>
+          <thead><tr><th>Type</th><th class="r">Staff</th><th class="r">Principal</th><th class="r">Repaid</th><th class="r">Balance</th></tr></thead>
+          <tbody id="l-types"><tr><td colspan="5" class="empty">Ledger empty - awaiting the opening seed list.</td></tr></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="phead"><h3>Who owes what</h3>
+        <span class="links"><a href="/app/staff-loan-advance/new" target="_blank">+ New loan / advance</a></span></div>
+      <p class="cap">Top outstanding balances from the ledger</p>
+      <div class="twrap"><table>
+        <thead><tr><th>Employee</th><th>Type</th><th class="r">Principal</th><th class="r">Repaid</th><th class="r">Balance</th><th>Status</th></tr></thead>
+        <tbody id="l-rows"><tr><td colspan="6" class="empty">No ledger records yet. Send the seed list and this table fills for all staff.</td></tr></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ============ LEAVE ============ -->
+  <section class="view" id="v-leave">
+    <div class="kpis">
+      <div class="kpi"><div class="ic i-g"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 20A7 7 0 0 1 4 13c0-5 4-9 10-10 3-.5 6 0 6 0s.5 3 0 6c-1 6-5 10-10 10z"/></svg></div>
+        <div class="lab">Days entitled (pool)</div><div class="val" id="v-ent">-</div><div class="s2">current allocations, all staff</div></div>
+      <div class="kpi"><div class="ic i-t"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div>
+        <div class="lab">Days taken this year</div><div class="val" id="v-taken">-</div><div class="s2" id="v-taken2">-</div></div>
+      <div class="kpi"><div class="ic i-a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
+        <div class="lab">Pending applications</div><div class="val" id="v-pend">-</div><div class="s2">awaiting approval</div></div>
+      <div class="kpi"><div class="ic i-v"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg></div>
+        <div class="lab">Encash requested</div><div class="val" id="v-enc">-</div><div class="s2" id="v-enc2">-</div></div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <h3>Leave position</h3><p class="cap">Company-wide, live</p>
+        <div class="bars" id="leavebars" style="margin-top:6px"></div>
+        <div class="note"><b>Liability lens:</b> unused entitled days are a real cash liability. The full per-employee breakdown lives in the Leave Balance Board.</div>
+      </div>
+      <div class="panel">
+        <h3>Encashment pipeline</h3><p class="cap">Requested, approved, paid</p>
+        <div class="twrap"><table>
+          <thead><tr><th>Status</th><th class="r">Requests</th><th class="r">Days</th></tr></thead>
+          <tbody id="encbody"><tr><td colspan="3" class="empty">No encashment requests recorded yet.</td></tr></tbody>
+        </table></div>
+        <div class="links" style="margin-top:12px">
+          <a href="/app/leave-encashment-request/new" target="_blank">+ New encash request</a>
+          <a href="/app/query-report/BGL Leave Balance Board" target="_blank">Leave Balance Board</a>
+          <a href="/app/leave-application" target="_blank">Leave applications</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="panel">
+    <h3>Jump to</h3>
+    <div class="links">
+      <a href="/app/daily-trip-log">Trip logs</a>
+      <a href="/app/query-report/BGL Trip Costing">Trip costing</a>
+      <a href="/app/staff-loan-advance">Loans &amp; advances</a>
+      <a href="/app/query-report/BGL Leave Balance Board">Leave board</a>
+      <a href="/app/leave-encashment-request">Encash requests</a>
+      <a href="/app/bgl-vehicle">Vehicle List</a>
+      <a href="/app/bgl-operations">Full workspace</a>
+    </div>
+  </div>
+
+  <p class="note" style="border:none">Betonsa Ghana Limited - Command Center - built on ERPNext by Powersoft. Figures refresh on load and every 5 minutes.</p>
+</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  var fmt = function(n){ return (Math.round((n||0)*100)/100).toLocaleString(); };
+  var el = function(id){ return document.getElementById(id); };
+  var esc = function(s){ var d=document.createElement('div'); d.textContent=(s==null?'':''+s); return d.innerHTML; };
+  var toastT;
+  function toast(msg){ var t=el('toast'); t.textContent=msg; t.style.display='block';
+    clearTimeout(toastT); toastT=setTimeout(function(){ t.style.display='none'; }, 4200); }
+  function countUp(id, target){
+    var e=el(id), t0=performance.now(), dur=900;
+    function step(t){ var p=Math.min(1,(t-t0)/dur); p=1-Math.pow(1-p,3);
+      e.textContent=fmt(target*p); if(p<1) requestAnimationFrame(step); else e.textContent=fmt(target); }
+    requestAnimationFrame(step);
+  }
+  function api(method, args, cb, errcb){
+    var fd=new URLSearchParams(); Object.keys(args||{}).forEach(function(k){ fd.append(k, args[k]); });
+    fetch('/api/method/bgl_ops.api.'+method, {method:'POST', body:fd,
+      headers:{'X-Frappe-CSRF-Token': (window.frappe && frappe.csrf_token) || '{{ csrf_token }}'}})
+      .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
+      .then(function(x){ if(x.ok && x.j.message!==undefined) cb(x.j.message);
+        else (errcb||toast)((x.j._server_messages? 'Server rejected the request' : 'Request failed')); })
+      .catch(function(e){ (errcb||toast)('Network error: '+e); });
+  }
+
+  // greeting + tabs
+  var h=new Date().getHours();
+  var g = h<12 ? 'Good morning' : (h<17 ? 'Good afternoon' : 'Good evening');
+  el('greet').textContent = g + ', ' + el('greet').textContent.replace(/^Good day, /,'');
+  var tabs=document.querySelectorAll('.tab');
+  tabs.forEach(function(t){ t.addEventListener('click', function(){
+    tabs.forEach(function(x){ x.classList.remove('on'); }); t.classList.add('on');
+    document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('on'); });
+    el('v-'+t.dataset.v).classList.add('on');
+  });});
+
+  // ============ dashboard ============
+  var CREW={};
+  function renderCrew(site){
+    var rows=CREW[site]||[]; var max=1; rows.forEach(function(r){ if(r[1]>max) max=r[1]; });
+    el('crewbars').innerHTML = rows.map(function(r){
+      var w=Math.max(2, Math.round(r[1]/max*100));
+      return '<div class="bar"><span class="nm">'+esc(r[0])+'</span><span class="t"><span class="f" style="width:'+w+'%"></span></span><span class="v">'+r[1]+'</span></div>';
+    }).join('') || '<div class="empty">No crew data.</div>';
+  }
+  var seg=el('seg-crew');
+  seg.querySelectorAll('button').forEach(function(b){ b.addEventListener('click', function(){
+    seg.querySelectorAll('button').forEach(function(x){ x.classList.remove('on'); });
+    b.classList.add('on'); renderCrew(b.dataset.s); });});
+
+  function load(){
+    api('dashboard_data', {}, function(d){
+      el('dateline').textContent = "Here's where Betonsa stands - " +
+        new Date(d.as_of+'T00:00:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}) + '.';
+
+      // crew maps
+      var all={}, air={}, tem={}, crewTotal=0, airT=0, temT=0;
+      (d.crew||[]).forEach(function(r){
+        var short=r.designation.replace(' Driver','').replace(' Operator',' Op');
+        all[short]=(all[short]||0)+r.cnt; crewTotal+=r.cnt;
+        if(r.branch==='Airport'){ air[short]=(air[short]||0)+r.cnt; airT+=r.cnt; }
+        if(r.branch==='Tema'){ tem[short]=(tem[short]||0)+r.cnt; temT+=r.cnt; }
+      });
+      function toRows(m){ return Object.keys(m).map(function(k){ return [k,m[k]]; })
+        .sort(function(a,b){ return b[1]-a[1]; }); }
+      CREW={All:toRows(all), Airport:toRows(air), Tema:toRows(tem)};
+      countUp('k-crew', crewTotal);
+      el('k-crew2').innerHTML='Drivers &amp; operators | <b>'+d.headcount+'</b> total staff';
+      el('k-sites2').textContent='Airport '+airT+' | Tema '+temT+' crew';
+      renderCrew('All');
+
+      // payroll recovery
+      var loanAmt=0, loanStaff=0, advAmt=0, advStaff=0;
+      (d.payroll_recovery||[]).forEach(function(r){
+        if(r.salary_component==='Loans'){ loanAmt=r.amt; loanStaff=r.staff; }
+        if(r.salary_component==='Salary Advance'){ advAmt=r.amt; advStaff=r.staff; }
+      });
+      countUp('k-owing', loanStaff+advStaff);
+      el('k-owing2').textContent='GHS '+fmt(loanAmt+advAmt)+' repaid / month';
+      countUp('k-onleave', d.leave.on_leave_today);
+      el('k-onleave2').textContent=d.leave.pending_apps+' applications pending';
+
+      // signals
+      var dot=function(c){ return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--'+c+');margin-right:9px;vertical-align:1px"></span>'; };
+      var ledgerBal=0,ledgerCnt=0;(d.active_loans||[]).forEach(function(r){ledgerBal+=r.balance;ledgerCnt+=r.cnt;});
+      var encReq=0,encDays=0;(d.encash||[]).forEach(function(r){ if(r.status==='Requested'){encReq=r.cnt;encDays=r.days;} });
+      el('signals').innerHTML =
+        '<tr><td>'+dot('amber')+'Money owed (payroll recovery)</td><td class="r"><b>GHS '+fmt(loanAmt+advAmt)+'</b>/mo</td></tr>'+
+        '<tr><td>'+dot('bad')+'Advances outstanding</td><td class="r">'+advStaff+' staff</td></tr>'+
+        '<tr><td>'+dot('amber')+'Loans running</td><td class="r">'+loanStaff+' staff</td></tr>'+
+        '<tr><td>'+dot('teal')+'Ledger seeded balance</td><td class="r">'+(ledgerCnt? 'GHS '+fmt(ledgerBal) : '<span class="tag t-info">awaiting seed</span>')+'</td></tr>'+
+        '<tr><td>'+dot('teal')+'Trip logs - today</td><td class="r">'+(d.logs_today.cnt? d.logs_today.cnt+' entries' : '<span class="tag t-info">awaiting entry</span>')+'</td></tr>'+
+        '<tr><td>'+dot('violet')+'Leave to approve</td><td class="r">'+(d.leave.pending_apps? d.leave.pending_apps+' pending' : 'none')+'</td></tr>'+
+        '<tr><td>'+dot('good')+'Encash requests</td><td class="r">'+(encReq? encReq+' ('+fmt(encDays)+' days)' : 'none pending')+'</td></tr>';
+
+      // trips tab
+      countUp('t-trips', d.trips_month.qty); el('t-trips2').textContent='GHS '+fmt(d.trips_month.amt)+' earned';
+      countUp('t-cubic', d.cubic_month.qty); el('t-cubic2').textContent='GHS '+fmt(d.cubic_month.amt)+' earned';
+      countUp('t-today', d.logs_today.cnt); el('t-today2').textContent=fmt(d.logs_today.qty)+' qty entered';
+      countUp('t-pay', d.trips_month.amt + d.cubic_month.amt);
+      el('ycap').textContent=d.yesterday;
+      if((d.yesterday_by_site||[]).length){
+        var tq=0,ta=0;
+        el('ybody').innerHTML=d.yesterday_by_site.map(function(r){ tq+=r.qty; ta+=r.amt;
+          return '<tr><td>'+esc(r.site||'-')+'</td><td class="r">'+fmt(r.qty)+'</td><td class="r">'+fmt(r.amt)+'</td></tr>'; }).join('')+
+          '<tr><td><b>Total</b></td><td class="r"><b>'+fmt(tq)+'</b></td><td class="r"><b>'+fmt(ta)+'</b></td></tr>';
+      }
+      var tr=d.trend_14d||[];
+      if(tr.length){
+        var tmax=1; tr.forEach(function(r){ if(r.amt>tmax) tmax=r.amt; });
+        el('trend').innerHTML=tr.map(function(r){
+          var hpx=Math.max(4, Math.round(r.amt/tmax*80));
+          return '<div class="tb" style="height:'+hpx+'px" data-t="'+esc(r.d)+': GHS '+fmt(r.amt)+' ('+fmt(r.qty)+' qty)"></div>'; }).join('');
+      }
+      var rows=d.month_by_site_group||[];
+      if(rows.length){
+        var m=1; rows.forEach(function(r){ if(r.amt>m) m=r.amt; });
+        el('gbars').innerHTML=rows.map(function(r){
+          var w=Math.max(2, Math.round(r.amt/m*100));
+          return '<div class="bar"><span class="nm">'+esc((r.site||'-')+' '+r.pay_group.replace(' Driver','').replace(' Operator',' Op'))+'</span>'+
+                 '<span class="t"><span class="f" style="width:'+w+'%"></span></span><span class="v">'+fmt(r.amt)+'</span></div>'; }).join('');
+      }
+      el('ratebody').innerHTML=(d.rates||[]).map(function(r){
+        return '<tr><td><b>'+esc(r.pay_group)+'</b></td><td>'+esc(r.site)+'</td><td>'+esc(r.day_type)+'</td>'+
+               '<td class="r">GHS '+fmt(r.rate)+'</td><td style="color:var(--teal)">'+esc(r.salary_component||'-')+'</td></tr>'; }).join('');
+
+      // loans tab
+      countUp('l-bal', ledgerBal);
+      el('l-bal2').textContent=ledgerCnt? ledgerCnt+' active records' : 'awaiting opening seed list';
+      countUp('l-loanamt', loanAmt); el('l-loanamt2').textContent=loanStaff+' staff repaying';
+      countUp('l-advamt', advAmt); el('l-advamt2').textContent=advStaff+' staff repaying';
+      countUp('l-rec', loanAmt+advAmt);
+      var total=loanAmt+advAmt||1, advPct=Math.round(advAmt/total*100);
+      el('l-donut').style.background='conic-gradient(var(--amber) 0 '+advPct+'%, var(--teal) '+advPct+'% 100%)';
+      el('l-donut-v').textContent=fmt(total>1? total:0);
+      el('l-legend').innerHTML=
+        '<div class="li"><span class="sw" style="background:var(--amber)"></span>Salary Advances <b>'+fmt(advAmt)+'</b></div>'+
+        '<div class="li"><span class="sw" style="background:var(--teal)"></span>Loans <b>'+fmt(loanAmt)+'</b></div>'+
+        '<div class="li" style="color:var(--faint);font-size:12px">'+advStaff+' vs '+loanStaff+' staff</div>';
+      if((d.active_loans||[]).length){
+        el('l-types').innerHTML=d.active_loans.map(function(r){
+          return '<tr><td>'+esc(r.loan_type)+'</td><td class="r">'+r.cnt+'</td><td class="r">'+fmt(r.principal)+'</td>'+
+                 '<td class="r">'+fmt(r.repaid)+'</td><td class="r"><b>'+fmt(r.balance)+'</b></td></tr>'; }).join('');
+      }
+      if((d.loan_rows||[]).length){
+        el('l-rows').innerHTML=d.loan_rows.map(function(r){
+          var tag=r.status==='Fully Paid'? '<span class="tag t-paid">Paid</span>' : '<span class="tag t-act">Active</span>';
+          return '<tr><td>'+esc(r.employee_name)+'</td><td>'+esc(r.loan_type)+'</td><td class="r">'+fmt(r.principal)+'</td>'+
+                 '<td class="r">'+fmt(r.total_repaid)+'</td><td class="r"><b>'+fmt(r.balance)+'</b></td><td>'+tag+'</td></tr>'; }).join('');
+      }
+
+      // leave tab
+      countUp('v-ent', d.leave.entitled);
+      countUp('v-taken', d.leave.taken);
+      el('v-taken2').textContent=fmt(Math.max(0,d.leave.entitled-d.leave.taken))+' days unused (liability)';
+      countUp('v-pend', d.leave.pending_apps);
+      countUp('v-enc', encReq); el('v-enc2').textContent=fmt(encDays)+' days awaiting decision';
+      var ent=d.leave.entitled||1;
+      el('leavebars').innerHTML=
+        '<div class="bar"><span class="nm">Entitled</span><span class="t"><span class="f" style="width:100%"></span></span><span class="v">'+fmt(d.leave.entitled)+'</span></div>'+
+        '<div class="bar"><span class="nm">Taken</span><span class="t"><span class="f" style="width:'+Math.min(100,Math.round(d.leave.taken/ent*100))+'%;background:linear-gradient(90deg,var(--teal),#6fd6dd)"></span></span><span class="v">'+fmt(d.leave.taken)+'</span></div>'+
+        '<div class="bar"><span class="nm">Remaining</span><span class="t"><span class="f" style="width:'+Math.min(100,Math.round(Math.max(0,ent-d.leave.taken)/ent*100))+'%;background:linear-gradient(90deg,var(--good),#79dcab)"></span></span><span class="v">'+fmt(Math.max(0,ent-d.leave.taken))+'</span></div>';
+      if((d.encash||[]).length){
+        el('encbody').innerHTML=d.encash.map(function(r){
+          return '<tr><td>'+esc(r.status)+'</td><td class="r">'+r.cnt+'</td><td class="r">'+fmt(r.days)+'</td></tr>'; }).join('');
+      }
+    });
+  }
+  load();
+  setInterval(load, 300000);
+
+  // ============ log sheet ============
+  var SHEET=null, DIRTY={}, TRUCKS={};
+  el('sh-month').value = new Date().toISOString().slice(0,7);
+  function markDirty(){ el('sh-save').disabled = !Object.keys(DIRTY).length && !Object.keys(TRUCKS).length; }
+
+  el('sh-load').addEventListener('click', function(){
+    DIRTY={}; TRUCKS={}; markDirty();
+    api('bulk_sheet', {site: el('sh-site').value, month: el('sh-month').value}, function(d){
+      SHEET=d; renderSheet(d); el('sh-submit').disabled=false;
+      toast(d.employees.length+' employees loaded for '+d.site+' '+d.month);
+    });
+  });
+
+  function renderSheet(d){
+    var sat={}, sun={};
+    d.saturdays.forEach(function(x){ sat[x]=1; }); d.sundays.forEach(function(x){ sun[x]=1; });
+    var h='<thead><tr><th class="emp">Driver / Operator</th><th class="trk">Vehicle</th>';
+    for(var i=1;i<=d.days;i++){
+      h+='<th class="'+(sat[i]?'sat':(sun[i]?'sun':''))+'">'+i+(sat[i]?'<br>S':(sun[i]?'<br>Su':''))+'</th>';
+    }
+    h+='<th style="min-width:56px">Total</th></tr></thead><tbody>';
+    d.employees.forEach(function(e){
+      var row=(d.grid||{})[e.name]||{};
+      h+='<tr><td class="emp">'+esc(e.employee_name)+'<div class="grp">'+esc(e.designation)+'</div></td>';
+      h+='<td class="trk"><input class="trkin" data-emp="'+esc(e.name)+'" value="'+esc(e.truck_no||'')+'" placeholder="-"></td>';
+      var tot=0;
+      for(var day=1;day<=d.days;day++){
+        var cell=row[String(day)];
+        var qty=cell? cell.qty : '';
+        if(cell) tot+=cell.qty;
+        var locked=cell && cell.submitted;
+        h+='<td style="'+(sun[day]?'background:rgba(232,117,107,.05)':'')+'">'+
+           '<input class="q" data-emp="'+esc(e.name)+'" data-day="'+day+'" value="'+(qty||'')+'"'+
+           (locked? ' disabled title="Submitted - locked"' : '')+'></td>';
+      }
+      h+='<td class="tot" data-totfor="'+esc(e.name)+'">'+(tot||'')+'</td></tr>';
+    });
+    h+='</tbody>';
+    el('sheet').innerHTML=h;
+
+    el('sheet').addEventListener('input', function(ev){
+      var t=ev.target;
+      if(t.classList.contains('q')){
+        t.classList.add('dirty');
+        DIRTY[t.dataset.emp+'|'+t.dataset.day]={employee:t.dataset.emp, day:t.dataset.day, qty:t.value};
+        var tot=0;
+        el('sheet').querySelectorAll('input.q[data-emp="'+t.dataset.emp+'"]').forEach(function(i){ tot+=parseFloat(i.value)||0; });
+        el('sheet').querySelector('[data-totfor="'+t.dataset.emp+'"]').textContent = tot||'';
+        markDirty();
+      }
+      if(t.classList.contains('trkin')){ TRUCKS[t.dataset.emp]=t.value; markDirty(); }
+    });
+  }
+
+  el('sh-save').addEventListener('click', function(){
+    if(!SHEET) return;
+    var entries=Object.keys(DIRTY).map(function(k){ return DIRTY[k]; });
+    el('sh-save').disabled=true;
+    api('bulk_save', {site:SHEET.site, month:SHEET.month,
+        entries: JSON.stringify(entries), trucks: JSON.stringify(TRUCKS)},
+      function(r){
+        toast('Saved: '+r.created+' created, '+r.updated+' updated, '+r.deleted+' cleared'+
+              (r.errors.length? ' | '+r.errors.length+' errors (see console)' : ''));
+        if(r.errors.length) console.warn(r.errors);
+        DIRTY={}; TRUCKS={};
+        el('sheet').querySelectorAll('input.q.dirty').forEach(function(i){ i.classList.remove('dirty'); });
+        markDirty(); load();
+      },
+      function(m){ toast(m); markDirty(); });
+  });
+
+  el('sh-submit').addEventListener('click', function(){
+    if(!SHEET) return;
+    if(!confirm('Submit ALL draft logs for '+SHEET.site+' '+SHEET.month+'? This locks them for payroll.')) return;
+    api('submit_month', {site:SHEET.site, month:SHEET.month}, function(r){
+      toast(r.submitted+' logs submitted and locked.');
+      el('sh-load').click(); load();
+    });
+  });
+})();
+</script>
+</body>
+</html>
