@@ -341,18 +341,5 @@
   "fieldtype": "Small Text",
   "insert_after": "custom_actual_resume_date",
   "allow_on_submit": 1
- },
- {
-  "doctype": "Custom Field",
-  "name": "Employee-custom_truck_no",
-  "dt": "Employee",
-  "fieldname": "custom_truck_no",
-  "label": "Vehicle",
-  "fieldtype": "Link",
-  "insert_after": "branch",
-  "in_list_view": 0,
-  "in_standard_filter": 1,
-  "description": "Vehicle usually operated by this employee (truck, pickup, car). Auto-fills into Daily Trip Logs.",
-  "options": "BGL Vehicle"
  }
 ]

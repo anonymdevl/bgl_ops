@@ -357,25 +357,5 @@
   "property_type": "Text",
   "value": "Draft = not calculated. Calculated = figures worked out, nothing written to payroll. Applied = assignment and additional salaries written to ERPNext.",
   "field_name": "status"
- },
- {
-  "doctype": "Property Setter",
-  "name": "Daily Trip Log-truck_no-fetch_from",
-  "doc_type": "Daily Trip Log",
-  "doctype_or_field": "DocField",
-  "field_name": "truck_no",
-  "property": "fetch_from",
-  "property_type": "Data",
-  "value": "employee.custom_truck_no"
- },
- {
-  "doctype": "Property Setter",
-  "name": "Daily Trip Log-truck_no-fetch_if_empty",
-  "doc_type": "Daily Trip Log",
-  "doctype_or_field": "DocField",
-  "field_name": "truck_no",
-  "property": "fetch_if_empty",
-  "property_type": "Check",
-  "value": "1"
  }
 ]

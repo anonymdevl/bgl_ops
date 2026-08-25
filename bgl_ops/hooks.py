@@ -1,8 +1,8 @@
 app_name = "bgl_ops"
 app_title = "BGL Ops"
-app_publisher = "Powersoft"
+app_publisher = "Michael"
 app_description = "Trips & cubic tracking, staff loans, leave visibility and an executive command center for Betonsa Ghana Limited."
-app_email = "ai4powersoft@gmail.com"
+app_email = "michael@powersoftsystem.com"
 app_license = "Proprietary"
 
 # Target stack: Frappe v16 / ERPNext v16 / Frappe HR v16 (as on bgl.powersoftsystem.com)
@@ -19,7 +19,6 @@ fixtures = [
     {"dt": "Custom Field", "filters": [["name", "in", [
         "Daily Trip Log-salary_component",
         "Employee-custom_no_of_days_suspended", "Employee-ssnit_number",
-        "Employee-custom_truck_no",
         "Employee-custom_take_home_section", "Employee-custom_target_take_home",
         "Employee-custom_basic_percentage", "Employee-custom_thp_cb",
         "Employee-custom_standard_working_days", "Employee-custom_thp_split_sb",
@@ -70,6 +69,4 @@ fixtures = [
     ]]]},
 ]
 
-website_route_rules = [
-    {"from_route": "/command-center", "to_route": "command_center"},
-]
+website_route_rules = []
