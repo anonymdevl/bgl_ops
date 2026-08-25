@@ -1,8 +1,8 @@
 app_name = "bgl_ops"
 app_title = "BGL Ops"
-app_publisher = "Michael"
+app_publisher = "Powersoft"
 app_description = "Trips & cubic tracking, staff loans, leave visibility and an executive command center for Betonsa Ghana Limited."
-app_email = "michael@powersoftsystem.com"
+app_email = "ai4powersoft@gmail.com"
 app_license = "Proprietary"
 
 # Target stack: Frappe v16 / ERPNext v16 / Frappe HR v16 (as on bgl.powersoftsystem.com)
@@ -69,4 +69,6 @@ fixtures = [
     ]]]},
 ]
 
-website_route_rules = []
+website_route_rules = [
+    {"from_route": "/command-center", "to_route": "command_center"},
+]

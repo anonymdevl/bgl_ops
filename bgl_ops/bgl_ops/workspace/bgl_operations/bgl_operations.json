@@ -1,0 +1,163 @@
+{
+ "doctype": "Workspace",
+ "name": "BGL Operations",
+ "label": "BGL Operations",
+ "title": "BGL Operations",
+ "module": "BGL Ops",
+ "icon": "hr",
+ "public": 1,
+ "is_hidden": 0,
+ "sequence_id": 99.0,
+ "content": "[{\"id\": \"hdr1\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>BGL Operations</b></span>\", \"col\": 12}}, {\"id\": \"p1\", \"type\": \"paragraph\", \"data\": {\"text\": \"Driver trips and cubic, staff loans and advances, and leave - one place for HR and operations.\", \"col\": 12}}, {\"id\": \"sc0\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Command Center\", \"col\": 3}}, {\"id\": \"sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Log Trips\", \"col\": 3}}, {\"id\": \"sc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Trip Costing\", \"col\": 3}}, {\"id\": \"sc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Loans & Advances\", \"col\": 3}}, {\"id\": \"sc4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Leave Board\", \"col\": 3}}, {\"id\": \"sc5\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Encash Requests\", \"col\": 3}}, {\"id\": \"nc1\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Trips This Month\", \"col\": 4}}, {\"id\": \"nc2\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cubic This Month (m3)\", \"col\": 4}}, {\"id\": \"nc3\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Trip Pay This Month (GHS)\", \"col\": 4}}, {\"id\": \"nc4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Loans & Advances\", \"col\": 4}}, {\"id\": \"nc5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Money Owed to Company (GHS)\", \"col\": 4}}, {\"id\": \"nc6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Encash Requests Pending\", \"col\": 4}}, {\"id\": \"ch1\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Daily Trip Pay Trend\", \"col\": 12}}, {\"id\": \"ch2\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Trip Pay by Site\", \"col\": 6}}, {\"id\": \"ch3\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Loan Balance by Type\", \"col\": 6}}, {\"id\": \"cd1\", \"type\": \"card\", \"data\": {\"card_name\": \"Trips & Cubic\", \"col\": 4}}, {\"id\": \"cd2\", \"type\": \"card\", \"data\": {\"card_name\": \"Loans & Advances\", \"col\": 4}}, {\"id\": \"cd3\", \"type\": \"card\", \"data\": {\"card_name\": \"Leave\", \"col\": 4}}]",
+ "number_cards": [
+  {
+   "number_card_name": "Trips This Month",
+   "label": "Trips This Month"
+  },
+  {
+   "number_card_name": "Cubic This Month (m3)",
+   "label": "Cubic This Month (m3)"
+  },
+  {
+   "number_card_name": "Trip Pay This Month (GHS)",
+   "label": "Trip Pay This Month (GHS)"
+  },
+  {
+   "number_card_name": "Active Loans & Advances",
+   "label": "Active Loans & Advances"
+  },
+  {
+   "number_card_name": "Money Owed to Company (GHS)",
+   "label": "Money Owed to Company (GHS)"
+  },
+  {
+   "number_card_name": "Encash Requests Pending",
+   "label": "Encash Requests Pending"
+  }
+ ],
+ "charts": [
+  {
+   "chart_name": "Daily Trip Pay Trend",
+   "label": "Daily Trip Pay Trend"
+  },
+  {
+   "chart_name": "Trip Pay by Site",
+   "label": "Trip Pay by Site"
+  },
+  {
+   "chart_name": "Loan Balance by Type",
+   "label": "Loan Balance by Type"
+  }
+ ],
+ "shortcuts": [
+  {
+   "type": "URL",
+   "url": "/command-center",
+   "label": "Command Center",
+   "color": "Grey"
+  },
+  {
+   "type": "DocType",
+   "link_to": "Daily Trip Log",
+   "label": "Log Trips",
+   "color": "Orange"
+  },
+  {
+   "type": "Report",
+   "link_to": "BGL Trip Costing",
+   "label": "Trip Costing",
+   "color": "Blue",
+   "report_ref_doctype": "Daily Trip Log"
+  },
+  {
+   "type": "DocType",
+   "link_to": "Staff Loan Advance",
+   "label": "Loans & Advances",
+   "color": "Purple"
+  },
+  {
+   "type": "Report",
+   "link_to": "BGL Leave Balance Board",
+   "label": "Leave Board",
+   "color": "Green",
+   "report_ref_doctype": "Leave Allocation"
+  },
+  {
+   "type": "DocType",
+   "link_to": "Leave Encashment Request",
+   "label": "Encash Requests",
+   "color": "Cyan"
+  }
+ ],
+ "links": [
+  {
+   "type": "Card Break",
+   "label": "Trips & Cubic",
+   "link_count": 4
+  },
+  {
+   "type": "Link",
+   "link_type": "DocType",
+   "link_to": "Daily Trip Log",
+   "label": "Daily Trip Log"
+  },
+  {
+   "type": "Link",
+   "link_type": "DocType",
+   "link_to": "BGL Trip Rate",
+   "label": "BGL Trip Rate"
+  },
+  {
+   "type": "Link",
+   "link_type": "Report",
+   "link_to": "BGL Trip Costing",
+   "label": "Trip Costing",
+   "is_query_report": 1
+  },
+  {
+   "type": "Link",
+   "link_type": "Report",
+   "link_to": "BGL Trips - Yesterday",
+   "label": "Trips - Yesterday",
+   "is_query_report": 1
+  },
+  {
+   "type": "Card Break",
+   "label": "Loans & Advances",
+   "link_count": 1
+  },
+  {
+   "type": "Link",
+   "link_type": "DocType",
+   "link_to": "Staff Loan Advance",
+   "label": "Staff Loan / Advance"
+  },
+  {
+   "type": "Card Break",
+   "label": "Leave",
+   "link_count": 3
+  },
+  {
+   "type": "Link",
+   "link_type": "Report",
+   "link_to": "BGL Leave Balance Board",
+   "label": "Leave Balance Board",
+   "is_query_report": 1
+  },
+  {
+   "type": "Link",
+   "link_type": "DocType",
+   "link_to": "Leave Encashment Request",
+   "label": "Leave Encashment Request"
+  },
+  {
+   "type": "Link",
+   "link_type": "DocType",
+   "link_to": "Leave Application",
+   "label": "Leave Application"
+  }
+ ],
+ "roles": [],
+ "quick_lists": [],
+ "custom_blocks": []
+}
