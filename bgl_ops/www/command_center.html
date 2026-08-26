@@ -223,6 +223,19 @@
   .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:50;
     background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 22px;
     font-size:13.5px;box-shadow:var(--sh);display:none}
+.ddt{border-collapse:collapse;width:100%;font-size:12.5px;margin:8px 0 2px}
+.ddt th,.ddt td{border-bottom:1px solid var(--line);padding:6px 9px;text-align:right;white-space:nowrap}
+.ddt th{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.ddt th.l,.ddt td.l{text-align:left}
+.ddt td input{width:96px;text-align:right;background:rgba(240,160,75,.06);border:1px solid var(--line);
+  color:inherit;border-radius:7px;padding:5px 8px;font:inherit;font-weight:700}
+.ddt td input:focus{outline:none;border-color:#f0a04b}
+.ddt tr.total td{font-weight:800;border-bottom:none}
+.ddt td.clears{color:#4ecb8d;font-weight:700}
+.ddh{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#f0a04b;margin:14px 0 0}
+.ddadd{background:none;border:1px dashed var(--line);color:var(--muted);border-radius:8px;
+  padding:4px 12px;font:inherit;font-size:12px;cursor:pointer;margin-top:6px}
+.ddadd:hover{color:#f0a04b;border-color:#f0a04b}
 </style>
 </head>
 <body>
@@ -357,12 +370,13 @@
         <span class="spacer" style="flex:1"></span>
         <button class="btn btn-p" id="sh-save" disabled>Save Drafts</button>
         <button class="btn btn-g" id="sh-submit" disabled>Submit Month (lock)</button>
+        <button class="btn btn-g" id="sh-gen" disabled>Generate Trip Earnings (Drafts)</button>
         <button class="btn btn-g" id="sh-print" disabled>Print Sheet</button>
       </div>
       <div class="sheetwrap"><table class="sheet" id="sheet"><tbody>
         <tr><td class="empty" style="padding:16px">Choose a site and month, then Load Sheet.</td></tr>
       </tbody></table></div>
-      <div class="note"><b>How it costs:</b> each day is priced server-side from the rate engine (site, group, weekday vs Saturday). Saving creates draft Daily Trip Logs; Submit Month locks them for payroll. Sundays are highlighted red; enter them only if worked (weekday rate applies unless you add an off-day rate).</div>
+      <div class="note"><b>How it costs:</b> each day is priced server-side from the rate engine (site, group, weekday vs Saturday). Saving creates draft Daily Trip Logs; Submit Month locks them for payroll; Generate Trip Earnings then turns the locked sheet into draft Additional Salary earning entries (dated to the last day of the month) for HR to review and submit - Payroll Entry still runs afterwards as usual. Sundays are highlighted red; enter them only if worked (weekday rate applies unless you add an off-day rate).</div>
     </div>
   </section>
 
@@ -405,6 +419,20 @@
         <thead><tr><th>Employee</th><th>Type</th><th class="r">Principal</th><th class="r">Repaid</th><th class="r">Balance</th><th>Status</th></tr></thead>
         <tbody id="l-rows"><tr><td colspan="6" class="empty">No ledger records yet. Send the seed list and this table fills for all staff.</td></tr></tbody>
       </table></div>
+    </div>
+
+    <div class="panel">
+      <div class="phead"><h3>Monthly deduction sheet</h3><span class="tag t-new">loans + advances + absences</span></div>
+      <p class="cap">Loans pre-fill from the ledger, advances carry forward from last month, absences are entered as days (the payslip computes the money). One Save writes the ledger and every draft deduction.</p>
+      <div class="sheetbar">
+        <select id="dd-month"></select>
+        <button class="btn btn-g" id="dd-load">Load Sheet</button>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn btn-p" id="dd-save" disabled>Save Deductions</button>
+        <button class="btn btn-g" id="dd-print" disabled>Print Sheet</button>
+      </div>
+      <div id="dd-body"><p class="cap" style="padding:8px 2px">Choose a month, then Load Sheet.</p></div>
+      <div class="note"><b>How it flows:</b> loan rows write ledger repayments + draft "Loans" deductions; advances become draft "Salary Advance" deductions (deducted in full this month); absent days become draft "Absent" deductions - amount ((days/22) x Basic) computed automatically. All drafts dated to month-end - review under Additional Salary, then run Payroll Entry.</div>
     </div>
   </section>
 
@@ -875,7 +903,7 @@
   el('sh-load').addEventListener('click', function(){
     DIRTY={}; TRUCKS={}; markDirty();
     api('bulk_sheet', {site: el('sh-site').value, month: ym()}, function(d){
-      SHEET=d; renderSheet(d); el('sh-submit').disabled=false; el('sh-print').disabled=false;
+      SHEET=d; renderSheet(d); el('sh-submit').disabled=false; el('sh-gen').disabled=false; el('sh-print').disabled=false;
       toast(d.employees.length+' employees loaded for '+d.site+' '+d.month);
     });
   });
@@ -928,7 +956,7 @@
     api('bulk_save', {site:SHEET.site, month:SHEET.month,
         entries: JSON.stringify(entries), trucks: JSON.stringify(TRUCKS)},
       function(r){
-        toast('Saved: '+r.created+' created, '+r.updated+' updated, '+r.deleted+' cleared'+
+        toast('Saved: '+r.created+' created, '+r.updated+' updated, '+r.deleted+' cleared. Next: Submit Month (lock) when the month is complete'+
               (r.errors.length? ' | '+r.errors.length+' errors (see console)' : ''));
         if(r.errors.length) console.warn(r.errors);
         DIRTY={}; TRUCKS={};
@@ -942,9 +970,207 @@
     if(!SHEET) return;
     if(!confirm('Submit ALL draft logs for '+SHEET.site+' '+SHEET.month+'? This locks them for payroll.')) return;
     api('submit_month', {site:SHEET.site, month:SHEET.month}, function(r){
-      toast(r.submitted+' logs submitted and locked.');
+      toast(r.submitted+' logs submitted and locked. Next: Generate Trip Earnings (Drafts).');
       el('sh-load').click(); load();
     });
+  });
+
+  el('sh-gen').addEventListener('click', function(){
+    if(!SHEET) return;
+    if(!confirm('Generate DRAFT trip earning entries (Additional Salary) from the locked '+SHEET.site+' '+SHEET.month+
+      ' sheet?\n\nOne draft per employee per component, dated to the last day of the month. '+
+      'Each source log is stamped so this can never double-pay.\n\nThis is step 1 of payroll, not payroll itself - after review, HR still runs Payroll Entry as usual.')) return;
+    api('generate_payroll_drafts', {site:SHEET.site, month:SHEET.month}, function(r){
+      if(!r.created){ toast(r.message || 'Nothing to pull for this sheet.'); return; }
+      toast(r.created+' trip earning draft(s) created, dated '+r.payroll_date+'. Next: review + submit them under Additional Salary, then run Payroll Entry.');
+      if(r.errors && r.errors.length) console.warn(r.errors);
+    });
+  });
+
+  // ============ monthly deduction sheet ============
+  var DED=null, DEDM=null;
+  (function(){
+    var sel=el('dd-month');
+    if(!sel) return;
+    MONTHS.forEach(function(m,i){ var o=document.createElement('option'); o.value=i; o.textContent=m; sel.appendChild(o); });
+    sel.value=new Date().getMonth();
+  })();
+  function ddYm(){
+    var mi=parseInt(el('dd-month').value,10), now=new Date(), y=now.getFullYear();
+    if(mi>now.getMonth()+1){ y-=1; }
+    return y+'-'+String(mi+1).padStart(2,'0');
+  }
+  function ddFmt(v){ return (Math.round((+v||0)*100)/100).toLocaleString('en-GH',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function ddDraft(comp, emp){
+    var d=(DED.drafts||[]).filter(function(x){ return x.salary_component===comp && x.employee===emp; });
+    return d.length? +d[0].amount : null;
+  }
+  function ddEmpName(emp){
+    var e=(DED.employees||[]).filter(function(x){ return x.name===emp; });
+    return e.length? e[0].employee_name : emp;
+  }
+  el('dd-load').addEventListener('click', function(){
+    DEDM=ddYm();
+    api('deduction_sheet', {month:DEDM}, function(d){
+      DED=d; renderDed();
+      el('dd-save').disabled=false; el('dd-print').disabled=false;
+    });
+  });
+  function ddAdvRow(emp,name,last,val){
+    return '<tr data-emp="'+emp+'"><td class="l">'+name+'</td><td>'+last+'</td>'+
+      '<td><input type="number" min="0" step="0.01" class="da" value="'+(Math.round(val*100)/100)+'"></td></tr>';
+  }
+  function ddAbsRow(emp,name,days){
+    return '<tr data-emp="'+emp+'"><td class="l">'+name+'</td>'+
+      '<td><input type="number" min="0" step="0.5" class="db" value="'+(+days||0)+'"></td><td class="est">-</td></tr>';
+  }
+  function renderDed(){
+    var mi=parseInt(DEDM.slice(5,7),10)-1, label=MONTHS[mi]+' '+DEDM.slice(0,4);
+    var h='<div class="ddh">1 - Loans</div><div class="twrap"><table class="ddt" id="dd-loans"><thead><tr>'+
+      '<th class="l">Employee</th><th>Principal</th><th>Repaid</th><th>Balance</th><th>Installment</th><th>Deduct this month</th><th class="l">After</th></tr></thead><tbody>';
+    (DED.loans||[]).forEach(function(l){
+      var saved=ddDraft('Loans', l.employee);
+      var v=saved!==null? saved : Math.min(+l.expected_monthly||+l.balance, +l.balance);
+      h+='<tr data-loan="'+l.name+'"><td class="l">'+l.employee_name+'</td><td>'+ddFmt(l.principal)+'</td>'+
+        '<td>'+ddFmt(l.total_repaid)+'</td><td>'+ddFmt(l.balance)+'</td><td>'+ddFmt(l.expected_monthly)+'</td>'+
+        '<td><input type="number" min="0" step="0.01" class="dl" value="'+(Math.round(v*100)/100)+'" data-bal="'+(+l.balance)+'"></td>'+
+        '<td class="l after">-</td></tr>';
+    });
+    if(!(DED.loans||[]).length) h+='<tr><td class="l" colspan="7">No active loans in the ledger.</td></tr>';
+    h+='<tr class="total"><td class="l">TOTAL LOANS</td><td></td><td></td><td></td><td></td><td id="dd-tl"></td><td></td></tr></tbody></table></div>';
+
+    h+='<div class="ddh">2 - Salary Advances <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"> - pre-filled from last month, deducted in full this month</span></div>'+
+      '<div class="twrap"><table class="ddt" id="dd-adv"><thead><tr><th class="l">Employee</th><th>Last month</th><th>Advance to deduct</th></tr></thead><tbody>';
+    var seen={};
+    (DED.prev_advances||[]).forEach(function(a){
+      seen[a.employee]=1;
+      var saved=ddDraft('Salary Advance', a.employee);
+      h+=ddAdvRow(a.employee, a.employee_name, ddFmt(a.amount), saved!==null? saved : +a.amount);
+    });
+    (DED.drafts||[]).forEach(function(x){
+      if(x.salary_component!=='Salary Advance'||seen[x.employee]) return;
+      seen[x.employee]=1;
+      h+=ddAdvRow(x.employee, ddEmpName(x.employee), '-', +x.amount);
+    });
+    h+='<tr class="total"><td class="l">TOTAL ADVANCES</td><td></td><td id="dd-ta"></td></tr></tbody></table></div>'+
+      '<button class="ddadd" id="dd-addadv">+ Add employee</button>';
+
+    h+='<div class="ddh">3 - Absent Days <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"> - days only; the amount ((days/22) x Basic) is computed and uploaded for you</span></div>'+
+      '<div class="twrap"><table class="ddt" id="dd-abs"><thead><tr><th class="l">Employee</th><th>Days absent</th><th>Deduction (auto)</th></tr></thead><tbody>';
+    (DED.drafts||[]).forEach(function(x){
+      if(x.salary_component!=='Absent') return;
+      var base=+((DED.bases||{})[x.employee])||0;
+      var days=base>0? Math.round((+x.amount*22/base)*2)/2 : 0;
+      h+=ddAbsRow(x.employee, ddEmpName(x.employee), days);
+    });
+    h+='<tr class="total"><td class="l">TOTAL</td><td id="dd-td"></td><td id="dd-tb"></td></tr></tbody></table></div>'+
+      '<button class="ddadd" id="dd-addabs">+ Add employee</button>';
+
+    el('dd-body').innerHTML=h;
+    el('dd-body').querySelectorAll('input').forEach(function(i){ i.addEventListener('input', ddTotals); });
+    el('dd-addadv').addEventListener('click', function(){ ddAdd('adv'); });
+    el('dd-addabs').addEventListener('click', function(){ ddAdd('abs'); });
+    ddTotals();
+  }
+  function ddAdd(kind){
+    var pick=prompt('Type part of the employee name:');
+    if(!pick) return;
+    var match=(DED.employees||[]).filter(function(e){ return e.employee_name.toLowerCase().indexOf(pick.toLowerCase())>=0; });
+    if(!match.length){ toast('No employee matches "'+pick+'"'); return; }
+    if(match.length>1){
+      var names=match.slice(0,8).map(function(e,i){ return (i+1)+'. '+e.employee_name; }).join('\n');
+      var n=prompt('Which one?\n'+names+'\nEnter number:');
+      var idx=parseInt(n,10)-1;
+      if(isNaN(idx)||!match[idx]) return;
+      match=[match[idx]];
+    }
+    var e=match[0];
+    var tb=document.querySelector(kind==='adv'? '#dd-adv tbody' : '#dd-abs tbody');
+    if(tb.querySelector('tr[data-emp="'+e.name+'"]')){ toast(e.employee_name+' is already on the list.'); return; }
+    var row=kind==='adv'? ddAdvRow(e.name, e.employee_name, '-', 0) : ddAbsRow(e.name, e.employee_name, 0);
+    tb.querySelector('tr.total').insertAdjacentHTML('beforebegin', row);
+    tb.querySelector('tr[data-emp="'+e.name+'"] input').addEventListener('input', ddTotals);
+    ddTotals();
+  }
+  function ddTotals(){
+    var tl=0;
+    document.querySelectorAll('#dd-loans tbody tr[data-loan]').forEach(function(tr){
+      var inp=tr.querySelector('input.dl'); var v=+inp.value||0, bal=+inp.dataset.bal||0;
+      if(v>bal){ v=bal; inp.value=v; }
+      tl+=v;
+      var after=bal-v, cell=tr.querySelector('td.after');
+      cell.textContent = (after<=0&&v>0)? ddFmt(0)+' - clears loan' : ddFmt(after);
+      cell.classList.toggle('clears', after<=0&&v>0);
+    });
+    var e1=el('dd-tl'); if(e1) e1.textContent='GHS '+ddFmt(tl);
+    var ta=0;
+    document.querySelectorAll('#dd-adv tbody tr[data-emp] input.da').forEach(function(i){ ta+=+i.value||0; });
+    var e2=el('dd-ta'); if(e2) e2.textContent='GHS '+ddFmt(ta);
+    var td=0, tb=0, bases=(DED&&DED.bases)||{};
+    document.querySelectorAll('#dd-abs tbody tr[data-emp]').forEach(function(tr){
+      var days=+tr.querySelector('input.db').value||0;
+      var est=(days/22)*(+bases[tr.dataset.emp]||0);
+      td+=days; tb+=est;
+      tr.querySelector('td.est').textContent = days? ddFmt(est) : '-';
+    });
+    var e3=el('dd-td'); if(e3) e3.textContent=td+' days';
+    var e4=el('dd-tb'); if(e4) e4.textContent='GHS '+ddFmt(tb);
+  }
+  el('dd-save').addEventListener('click', function(){
+    if(!DED) return;
+    if(!confirm('Save the '+DEDM+' deduction sheet?\n\nLoan rows write ledger repayments + draft "Loans" deductions; advances become draft "Salary Advance" deductions; absent days become draft "Absent" deductions with the amount computed for you.\n\nThis is step 1 of payroll, not payroll itself - after review, HR still runs Payroll Entry as usual.')) return;
+    var loans=[], advances=[], absences=[];
+    document.querySelectorAll('#dd-loans tbody tr[data-loan]').forEach(function(tr){
+      loans.push({loan:tr.dataset.loan, amount:+tr.querySelector('input.dl').value||0});
+    });
+    document.querySelectorAll('#dd-adv tbody tr[data-emp]').forEach(function(tr){
+      advances.push({employee:tr.dataset.emp, amount:+tr.querySelector('input.da').value||0});
+    });
+    document.querySelectorAll('#dd-abs tbody tr[data-emp]').forEach(function(tr){
+      absences.push({employee:tr.dataset.emp, days:+tr.querySelector('input.db').value||0});
+    });
+    api('deduction_save', {month:DEDM, loans:JSON.stringify(loans), advances:JSON.stringify(advances), absences:JSON.stringify(absences)},
+      function(r){
+        var msg='Saved: '+r.loans+' loan deduction(s), '+r.advances+' advance(s), '+r.absences+' absence entr(ies). Next: review + submit the drafts under Additional Salary, then run Payroll Entry.';
+        if(r.cleared.length) msg+=' Loans cleared: '+r.cleared.join(', ')+'.';
+        toast(msg);
+        if(r.errors.length) console.warn(r.errors);
+        el('dd-load').click(); load();
+      });
+  });
+  el('dd-print').addEventListener('click', function(){
+    if(!DED) return;
+    var mi=parseInt(DEDM.slice(5,7),10)-1, label=MONTHS[mi]+' '+DEDM.slice(0,4);
+    function grab(sel, cols){
+      var t='<table><tr>'+cols.map(function(c,i){ return '<th class="'+(i===0?'l':'')+'">'+c+'</th>'; }).join('')+'</tr>';
+      document.querySelectorAll(sel+' tbody tr').forEach(function(tr){
+        var isTotal=tr.classList.contains('total');
+        var inp=tr.querySelector('input');
+        if(!isTotal && inp && !(+inp.value>0)) return;
+        var cells=[];
+        tr.querySelectorAll('td').forEach(function(td){
+          var i2=td.querySelector('input');
+          cells.push(i2? i2.value : td.textContent);
+        });
+        if(!cells.length) return;
+        t+='<tr class="'+(isTotal?'total':'')+'">'+cells.slice(0,cols.length).map(function(c,i){
+          return '<td class="'+(i===0?'l':'')+'">'+(c||'-')+'</td>'; }).join('')+'</tr>';
+      });
+      return t+'</table>';
+    }
+    var h='<html><head><meta charset="utf-8"><title>Deduction Sheet '+label+'</title><style>'+
+      'body{font-family:Arial;font-size:9pt;color:#000;margin:24px}h2{margin:0}h3{margin:14px 0 4px;font-size:10pt}'+
+      'img{height:44px}.hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}'+
+      'table{border-collapse:collapse;width:100%;margin-bottom:8px}th,td{border:0.5pt solid #000;padding:3pt 6pt;text-align:right}'+
+      'th{background:#eee}th.l,td.l{text-align:left}tr.total td{font-weight:bold;background:#f4f4f4}'+
+      '.sig{margin-top:26pt;font-size:8pt;font-weight:bold}</style></head><body>'+
+      '<div class="hd"><img src="/files/betonsa_logo.jpeg"><div style="text-align:right"><h2>MONTHLY DEDUCTION SHEET</h2><div>'+label+'</div></div></div>'+
+      '<h3>1. Loans</h3>'+grab('#dd-loans',['Employee','Principal','Repaid','Balance','Installment','Deduct','After'])+
+      '<h3>2. Salary Advances</h3>'+grab('#dd-adv',['Employee','Last month','Deduct'])+
+      '<h3>3. Absent Days</h3>'+grab('#dd-abs',['Employee','Days','Est. deduction'])+
+      '<div class="sig">APPROVED BY MANAGING DIRECTOR .................................................................</div></body></html>';
+    var w=window.open('','_blank'); w.document.write(h); w.document.close();
+    setTimeout(function(){ w.print(); }, 400);
   });
 })();
 </script>

@@ -62,3 +62,12 @@ sync updates records in place by name. Take a backup first as standard practice:
 ## Command Center
 After install, visit https://<site>/command-center while logged in.
 Access: any authenticated user with HR User / HR Manager / System Manager role.
+
+## Monthly Deduction Sheet dependencies
+
+The Deduction Sheet (desk page `deduction-sheet` + Command Center Loans tab)
+expects these Salary Components to exist on the site (they are site-resident,
+not shipped by this app): `Loans`, `Salary Advance`, and `Absent`.
+Absent drafts are created with the FULL amount ((days/22) x latest SSA base)
+and overwrite_salary_structure_amount=1 - matching how HR uploads them by
+hand. The site's `Absent Days`/`Absent` formula pair is unused by the sheet.

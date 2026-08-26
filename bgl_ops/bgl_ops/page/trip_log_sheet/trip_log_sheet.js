@@ -28,6 +28,7 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 	page.set_primary_action('Load Sheet', load_sheet);
 	page.set_secondary_action('Save Drafts', save_drafts);
 	page.add_inner_button('Submit Month (lock)', submit_month);
+	page.add_inner_button('Generate Trip Earnings (Drafts)', generate_payroll_drafts);
 	page.add_inner_button('Print Sheet', print_sheet);
 
 	var body = $('<div class="tls-body"></div>').appendTo(page.main);
@@ -160,7 +161,7 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 			callback: function(r) {
 				var m = r.message;
 				frappe.show_alert({
-					message: 'Saved: ' + m.created + ' created, ' + m.updated + ' updated, ' + m.deleted + ' cleared',
+					message: 'Saved: ' + m.created + ' created, ' + m.updated + ' updated, ' + m.deleted + ' cleared. Next: keep entering days; when the month is complete, use Submit Month (lock).',
 					indicator: m.errors.length ? 'orange' : 'green'
 				});
 				if (m.errors.length) frappe.msgprint({ title: 'Some rows failed', message: m.errors.join('<br>') });
@@ -228,6 +229,43 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 		setTimeout(function() { w.print(); }, 400);
 	}
 
+	function generate_payroll_drafts() {
+		if (!state.sheet) { frappe.msgprint('Load a sheet first.'); return; }
+		frappe.confirm(
+			'Generate DRAFT trip earning entries (Additional Salary) from the locked ' + state.sheet.site + ' ' + state.sheet.month +
+			' sheet?<br><br>One draft per employee per component, dated to the last day of the month. ' +
+			'Each source log is stamped, so this can never double-pay.<br><br><b>This is step 1 of payroll, not payroll itself</b> - after reviewing and submitting the drafts, HR still runs Payroll Entry as usual.',
+			function() {
+				frappe.call({
+					method: 'bgl_ops.api.generate_payroll_drafts',
+					args: { site: state.sheet.site, month: state.sheet.month },
+					freeze: true, freeze_message: 'Generating payroll drafts...',
+					callback: function(r) {
+						var m = r.message || {};
+						if (!m.created) {
+							frappe.msgprint(m.message || 'Nothing to pull for this sheet.');
+							return;
+						}
+						var rows = (m.entries || []).map(function(e) {
+							return '<tr><td>' + e.employee + '</td><td>' + e.component +
+								'</td><td style="text-align:right">' + format_currency(e.amount, 'GHS') + '</td></tr>';
+						}).join('');
+						frappe.msgprint({
+							title: m.created + ' draft(s) created for payroll date ' + frappe.datetime.str_to_user(m.payroll_date),
+							indicator: 'green',
+							message: '<table class="table table-bordered" style="font-size:12px">' +
+								'<tr><th>Employee</th><th>Component</th><th style="text-align:right">Amount</th></tr>' +
+								rows + '</table>' +
+								'<p>Review and submit them under <a href="/app/additional-salary?docstatus=0">Additional Salary (drafts)</a>. ' +
+								'<b>Payroll is not done yet</b> - once submitted, continue with Payroll Entry for the month.</p>' +
+								((m.errors && m.errors.length) ? '<p style="color:var(--red-500)">' + m.errors.join('<br>') + '</p>' : '')
+						});
+					}
+				});
+			}
+		);
+	}
+
 	function submit_month() {
 		if (!state.sheet) { frappe.msgprint('Load a sheet first.'); return; }
 		frappe.confirm(
@@ -238,7 +276,7 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 					args: { site: state.sheet.site, month: state.sheet.month },
 					freeze: true,
 					callback: function(r) {
-						frappe.show_alert({ message: r.message.submitted + ' logs submitted and locked', indicator: 'green' });
+						frappe.show_alert({ message: r.message.submitted + ' logs submitted and locked. Next: Generate Trip Earnings (Drafts) to send them to payroll.', indicator: 'green' });
 						load_sheet();
 					}
 				});

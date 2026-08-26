@@ -346,3 +346,303 @@ def submit_month(site, month):
         done += 1
     frappe.db.commit()
     return {"submitted": done}
+
+
+@frappe.whitelist()
+def generate_payroll_drafts(site, month):
+    """One click: turn the locked (submitted) trip sheet for site+month into
+    DRAFT Additional Salary earning entries - one per employee per component.
+
+    - Only submitted logs (docstatus=1) not yet pulled_to_payroll are used.
+    - payroll_date is set to the LAST DAY of the sheet's month, so ERPNext
+      places each amount in that month's payroll run automatically.
+    - Entries are created as DRAFTS for HR to review and submit.
+    - Every source log is stamped pulled_to_payroll=1, so re-clicking can
+      never create a duplicate payment.
+    """
+    _require_access()
+    if "HR Manager" not in frappe.get_roles() and \
+            "System Manager" not in frappe.get_roles():
+        frappe.throw("Only HR Manager can generate payroll drafts",
+                     frappe.PermissionError)
+
+    year, mon = int(month[:4]), int(month[5:7])
+    payroll_date = f"{year:04d}-{mon:02d}-{calendar.monthrange(year, mon)[1]:02d}"
+
+    pending_drafts = frappe.db.count(
+        "Daily Trip Log",
+        {"payroll_month": month, "branch": site, "docstatus": 0})
+    if pending_drafts:
+        frappe.throw(
+            f"{pending_drafts} log(s) for {site} {month} are still in Draft. "
+            "Use 'Submit Month (lock)' first, then generate payroll drafts.")
+
+    logs = _q(
+        """select name, employee, employee_name, salary_component,
+                  ifnull(quantity,0) qty, ifnull(amount,0) amt
+           from `tabDaily Trip Log`
+           where docstatus=1 and payroll_month=%(m)s and branch=%(s)s
+             and ifnull(pulled_to_payroll,0)=0 and ifnull(amount,0) > 0
+             and ifnull(salary_component,'') != ''""",
+        {"m": month, "s": site})
+    if not logs:
+        return {"created": 0, "message":
+                "Nothing to pull - every submitted log for this sheet has "
+                "already been sent to payroll (or has no amount)."}
+
+    groups = {}
+    for l in logs:
+        g = groups.setdefault((l.employee, l.salary_component), {
+            "employee": l.employee, "employee_name": l.employee_name,
+            "component": l.salary_component,
+            "amount": 0.0, "qty": 0.0, "log_names": []})
+        g["amount"] += flt(l.amt)
+        g["qty"] += flt(l.qty)
+        g["log_names"].append(l.name)
+
+    month_label = f"{calendar.month_name[mon]} {year}"
+    created, errors = [], []
+    for g in groups.values():
+        try:
+            company = frappe.db.get_value("Employee", g["employee"], "company")
+            doc = frappe.get_doc({
+                "doctype": "Additional Salary",
+                "employee": g["employee"],
+                "company": company,
+                "salary_component": g["component"],
+                "amount": flt(g["amount"], 2),
+                "payroll_date": payroll_date,
+                "overwrite_salary_structure_amount": 0,
+                "remark": (f"Auto-generated from {site} trip sheet "
+                           f"{month_label}: {len(g['log_names'])} day(s), "
+                           f"total qty {flt(g['qty'], 2)}."),
+            })
+            doc.insert()  # stays DRAFT (docstatus 0) for HR review
+            for n in g["log_names"]:
+                frappe.db.set_value("Daily Trip Log", n,
+                                    "pulled_to_payroll", 1,
+                                    update_modified=False)
+            created.append({
+                "name": doc.name, "employee": g["employee_name"],
+                "component": g["component"], "amount": flt(g["amount"], 2)})
+        except Exception as ex:
+            errors.append(f"{g['employee_name']} / {g['component']}: {ex}")
+
+    frappe.db.commit()
+    return {"created": len(created), "payroll_date": payroll_date,
+            "entries": created, "errors": errors[:10]}
+
+
+# ---------------------------------------------------------------------------
+# Monthly Deduction Sheet (loans, salary advances, absent days)
+# ---------------------------------------------------------------------------
+
+DEDUCT_COMPONENTS = ("Loans", "Salary Advance", "Absent")
+
+
+def _month_end(month):
+    year, mon = int(month[:4]), int(month[5:7])
+    return f"{year:04d}-{mon:02d}-{calendar.monthrange(year, mon)[1]:02d}"
+
+
+def _prev_month_end(month):
+    year, mon = int(month[:4]), int(month[5:7])
+    if mon == 1:
+        year, mon = year - 1, 12
+    else:
+        mon -= 1
+    return f"{year:04d}-{mon:02d}-{calendar.monthrange(year, mon)[1]:02d}"
+
+
+@frappe.whitelist()
+def deduction_sheet(month):
+    """Everything the Monthly Deduction Sheet needs for one month (YYYY-MM)."""
+    _require_access()
+    m_end = _month_end(month)
+    prev_end = _prev_month_end(month)
+
+    loans = _q(
+        """select name, employee, employee_name, loan_type, principal,
+                  ifnull(total_repaid,0) total_repaid, ifnull(balance,0) balance,
+                  ifnull(expected_monthly,0) expected_monthly
+           from `tabStaff Loan Advance`
+           where status='Active' and loan_type != 'Salary Advance'
+           order by employee_name""")
+
+    # Current month's saved drafts (so reloading shows what was entered)
+    drafts = _q(
+        """select name, employee, salary_component, amount
+           from `tabAdditional Salary`
+           where docstatus=0 and payroll_date=%(d)s
+             and salary_component in %(comps)s""",
+        {"d": m_end, "comps": DEDUCT_COMPONENTS})
+
+    # Last month's submitted advances = this month's pre-fill
+    prev_adv = _q(
+        """select employee, employee_name, amount
+           from `tabAdditional Salary`
+           where docstatus=1 and payroll_date=%(d)s
+             and salary_component='Salary Advance'
+           order by employee_name""",
+        {"d": prev_end})
+
+    employees = _q(
+        """select name, employee_name, branch from `tabEmployee`
+           where status='Active' order by employee_name""")
+
+    # base pay for absent-day estimates (latest salary structure assignment)
+    bases = _q(
+        """select ssa.employee, ssa.base
+           from `tabSalary Structure Assignment` ssa
+           inner join (
+               select employee, max(from_date) mx
+               from `tabSalary Structure Assignment`
+               where docstatus=1 group by employee) t
+             on t.employee = ssa.employee and t.mx = ssa.from_date
+           where ssa.docstatus=1""")
+
+    return {"month": month, "month_end": m_end, "prev_month_end": prev_end,
+            "loans": loans, "drafts": drafts, "prev_advances": prev_adv,
+            "employees": employees,
+            "bases": {b.employee: flt(b.base) for b in bases}}
+
+
+def _upsert_deduction_draft(employee, component, amount, m_end, remark,
+                            overwrite=0):
+    """Create/update/delete ONE draft Additional Salary. Returns action."""
+    existing = frappe.db.get_value(
+        "Additional Salary",
+        {"employee": employee, "salary_component": component,
+         "payroll_date": m_end, "docstatus": 0}, "name")
+    if flt(amount) <= 0:
+        if existing:
+            frappe.delete_doc("Additional Salary", existing)
+            return "deleted"
+        return "skipped"
+    if existing:
+        doc = frappe.get_doc("Additional Salary", existing)
+        doc.amount = flt(amount, 2)
+        doc.remark = remark
+        doc.overwrite_salary_structure_amount = overwrite
+        doc.save()
+        return "updated"
+    doc = frappe.get_doc({
+        "doctype": "Additional Salary",
+        "employee": employee,
+        "company": frappe.db.get_value("Employee", employee, "company"),
+        "salary_component": component,
+        "amount": flt(amount, 2),
+        "payroll_date": m_end,
+        "overwrite_salary_structure_amount": overwrite,
+        "remark": remark,
+    })
+    doc.insert()  # stays DRAFT for HR review
+    return "created"
+
+
+@frappe.whitelist()
+def deduction_save(month, loans=None, advances=None, absences=None):
+    """Save the Monthly Deduction Sheet.
+
+    loans:    [{loan, amount}]        -> ledger repayment + draft 'Loans'
+    advances: [{employee, amount}]    -> draft 'Salary Advance'
+    absences: [{employee, days}]      -> draft 'Absent Days' (amount = days)
+    All drafts dated to the last day of the month; amount/days 0 removes
+    the draft (and the ledger row for loans). Saving twice updates in
+    place - never duplicates.
+    """
+    _require_access()
+    if "HR Manager" not in frappe.get_roles() and \
+            "System Manager" not in frappe.get_roles():
+        frappe.throw("Only HR Manager can save deductions",
+                     frappe.PermissionError)
+
+    loans = json.loads(loans) if isinstance(loans, str) else (loans or [])
+    advances = json.loads(advances) if isinstance(advances, str) else (advances or [])
+    absences = json.loads(absences) if isinstance(absences, str) else (absences or [])
+
+    m_end = _month_end(month)
+    year, mon = int(month[:4]), int(month[5:7])
+    month_label = f"{calendar.month_name[mon]} {year}"
+    ref = f"PAYROLL-{month}"
+    out = {"loans": 0, "advances": 0, "absences": 0, "cleared": [], "errors": []}
+
+    for row in loans:
+        try:
+            doc = frappe.get_doc("Staff Loan Advance", row.get("loan"))
+            amount = flt(row.get("amount") or 0)
+            other = sum(flt(r.amount) for r in doc.repayments if r.reference != ref)
+            room = flt(doc.principal) - other
+            if amount > room:
+                amount = room  # never deduct past the balance
+            mine = [r for r in doc.repayments if r.reference == ref]
+            if amount <= 0:
+                for r in mine:
+                    doc.repayments.remove(r)
+            elif mine:
+                mine[0].amount = amount
+                mine[0].payment_date = m_end
+            else:
+                doc.append("repayments", {
+                    "payment_date": m_end, "amount": amount,
+                    "source": "Payroll Deduction", "reference": ref,
+                    "remarks": f"Deduction sheet {month_label}"})
+            doc.total_repaid = sum(flt(r.amount) for r in doc.repayments)
+            doc.balance = flt(doc.principal) - flt(doc.total_repaid)
+            if doc.balance <= 0:
+                doc.status = "Fully Paid"
+                out["cleared"].append(doc.employee_name)
+            elif doc.status == "Fully Paid":
+                doc.status = "Active"
+            doc.save()
+            _upsert_deduction_draft(
+                doc.employee, "Loans", amount, m_end,
+                f"Loan installment {month_label} ({doc.name}) via deduction sheet")
+            if amount > 0:
+                out["loans"] += 1
+        except Exception as ex:
+            out["errors"].append(f"Loan {row.get('loan')}: {ex}")
+
+    for row in advances:
+        try:
+            act = _upsert_deduction_draft(
+                row.get("employee"), "Salary Advance",
+                flt(row.get("amount") or 0), m_end,
+                f"Salary advance {month_label} via deduction sheet")
+            if act in ("created", "updated"):
+                out["advances"] += 1
+        except Exception as ex:
+            out["errors"].append(f"Advance {row.get('employee')}: {ex}")
+
+    bases = {}
+
+    def _base(emp):
+        if emp not in bases:
+            bases[emp] = flt(frappe.db.get_value(
+                "Salary Structure Assignment",
+                {"employee": emp, "docstatus": 1}, "base",
+                order_by="from_date desc"))
+        return bases[emp]
+
+    for row in absences:
+        try:
+            emp = row.get("employee")
+            days = flt(row.get("days") or 0)
+            base = _base(emp)
+            amount = flt((days / 22.0) * base, 2)
+            if days > 0 and base <= 0:
+                out["errors"].append(
+                    f"Absence {emp}: no salary structure base found")
+                continue
+            act = _upsert_deduction_draft(
+                emp, "Absent", amount, m_end,
+                f"Absent {month_label}: {days} day(s) x (base {flt(base, 2)}"
+                f" / 22) via deduction sheet", overwrite=1)
+            if act in ("created", "updated"):
+                out["absences"] += 1
+        except Exception as ex:
+            out["errors"].append(f"Absence {row.get('employee')}: {ex}")
+
+    frappe.db.commit()
+    out["errors"] = out["errors"][:10]
+    return out

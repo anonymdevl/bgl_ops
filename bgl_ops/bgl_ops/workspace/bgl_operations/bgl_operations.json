@@ -76,6 +76,12 @@
    "report_ref_doctype": "Daily Trip Log"
   },
   {
+   "type": "Page",
+   "link_to": "deduction-sheet",
+   "label": "Deduction Sheet (HR)",
+   "color": "Red"
+  },
+  {
    "type": "DocType",
    "link_to": "Staff Loan Advance",
    "label": "Loans & Advances",

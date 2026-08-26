@@ -1,0 +1,15 @@
+{
+ "doctype": "Page",
+ "name": "deduction-sheet",
+ "page_name": "deduction-sheet",
+ "title": "Monthly Deduction Sheet",
+ "icon": "octicon octicon-credit-card",
+ "module": "BGL Ops",
+ "standard": "Yes",
+ "system_page": 0,
+ "roles": [
+  {"role": "HR User"},
+  {"role": "HR Manager"},
+  {"role": "System Manager"}
+ ]
+}
