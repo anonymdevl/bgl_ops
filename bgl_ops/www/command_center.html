@@ -1038,6 +1038,7 @@
     });
     if(!(DED.loans||[]).length) h+='<tr><td class="l" colspan="7">No active loans in the ledger.</td></tr>';
     h+='<tr class="total"><td class="l">TOTAL LOANS</td><td></td><td></td><td></td><td></td><td id="dd-tl"></td><td></td></tr></tbody></table></div>';
+    h+='<button class="ddadd" id="dd-addloan">+ Add loan / advance</button>';
 
     h+='<div class="ddh">2 - Salary Advances <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"> - pre-filled from last month, deducted in full this month</span></div>'+
       '<div class="twrap"><table class="ddt" id="dd-adv"><thead><tr><th class="l">Employee</th><th>Last month</th><th>Advance to deduct</th></tr></thead><tbody>';
@@ -1068,9 +1069,32 @@
 
     el('dd-body').innerHTML=h;
     el('dd-body').querySelectorAll('input').forEach(function(i){ i.addEventListener('input', ddTotals); });
+    el('dd-addloan').addEventListener('click', ddAddLoan);
     el('dd-addadv').addEventListener('click', function(){ ddAdd('adv'); });
     el('dd-addabs').addEventListener('click', function(){ ddAdd('abs'); });
     ddTotals();
+  }
+  function ddAddLoan(){
+    var pick=prompt('New loan - type part of the employee name:');
+    if(!pick) return;
+    var match=(DED.employees||[]).filter(function(e){ return e.employee_name.toLowerCase().indexOf(pick.toLowerCase())>=0; });
+    if(!match.length){ toast('No employee matches "'+pick+'"'); return; }
+    if(match.length>1){
+      var names=match.slice(0,8).map(function(e,i){ return (i+1)+'. '+e.employee_name; }).join('\n');
+      var n=prompt('Which one?\n'+names+'\nEnter number:');
+      var idx=parseInt(n,10)-1;
+      if(isNaN(idx)||!match[idx]) return;
+      match=[match[idx]];
+    }
+    var e=match[0];
+    var principal=parseFloat(prompt('Principal (GHS) for '+e.employee_name+':'));
+    if(!(principal>0)){ toast('Principal must be a positive amount.'); return; }
+    var inst=parseFloat(prompt('Agreed monthly installment (GHS), blank for none:'))||0;
+    api('loan_create', {employee:e.name, principal:principal, expected_monthly:inst},
+      function(r){
+        toast('Loan '+r.name+' recorded for '+r.employee_name+'. Next: its installment now appears on this sheet - adjust if needed, then Save Deductions.');
+        el('dd-load').click(); load();
+      });
   }
   function ddAdd(kind){
     var pick=prompt('Type part of the employee name:');

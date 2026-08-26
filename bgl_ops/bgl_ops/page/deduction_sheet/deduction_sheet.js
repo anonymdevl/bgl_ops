@@ -86,6 +86,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		if (!(d.loans || []).length) h += '<tr><td class="l" colspan="7">No active loans in the ledger.</td></tr>';
 		h += '<tr class="total"><td class="l">TOTAL LOANS</td><td></td><td></td><td></td><td></td><td id="tot-loans"></td><td></td></tr>';
 		h += '</tbody></table>';
+		h += '<button class="btn btn-xs btn-default dds-add" id="add-loan">+ Add loan / advance</button>';
 
 		h += '<h4>2. Salary Advances - ' + label + '</h4>' +
 			'<p class="sect-note">Pre-filled from last month\'s submitted advances. Edit the exceptions, set 0 for no advance, add new people below. Advances are deducted in full this same month.</p>' +
@@ -126,6 +127,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 
 		holder.html(h);
 		holder.find('input').on('input', function() { $(this).addClass('dirty'); totals(); });
+		holder.find('#add-loan').on('click', add_loan);
 		holder.find('#add-adv').on('click', function() { add_person('adv'); });
 		holder.find('#add-abs').on('click', function() { add_person('abs'); });
 		totals();
@@ -140,6 +142,31 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		return '<tr data-emp="' + emp + '"><td class="l">' + name + '</td>' +
 			'<td><input type="number" min="0" step="0.5" class="db-days" value="' + flt(days) + '"></td>' +
 			'<td class="est"></td></tr>';
+	}
+
+	function add_loan() {
+		var d = state.data;
+		var opts = (d.employees || []).map(function(e) { return e.name + ': ' + e.employee_name; });
+		frappe.prompt([
+			{ fieldname: 'emp', label: 'Employee', fieldtype: 'Select', options: opts.join('\n'), reqd: 1 },
+			{ fieldname: 'loan_type', label: 'Type', fieldtype: 'Select', options: 'Loan\nOther', default: 'Loan' },
+			{ fieldname: 'principal', label: 'Principal (GHS)', fieldtype: 'Currency', reqd: 1 },
+			{ fieldname: 'expected_monthly', label: 'Agreed monthly installment (GHS)', fieldtype: 'Currency' },
+			{ fieldname: 'date_taken', label: 'Date taken', fieldtype: 'Date', default: frappe.datetime.get_today() },
+			{ fieldname: 'reason', label: 'Reason', fieldtype: 'Small Text' }
+		], function(v) {
+			frappe.call({
+				method: 'bgl_ops.api.loan_create',
+				args: { employee: v.emp.split(':')[0].trim(), principal: v.principal,
+					expected_monthly: v.expected_monthly, loan_type: v.loan_type,
+					date_taken: v.date_taken, reason: v.reason },
+				freeze: true,
+				callback: function(r) {
+					frappe.show_alert({ message: 'Loan ' + r.message.name + ' recorded for ' + r.message.employee_name + '. Next: its installment now appears on this sheet - adjust if needed, then Save Deductions.', indicator: 'green' });
+					load_sheet();
+				}
+			});
+		}, 'Record a new loan / advance', 'Create');
 	}
 
 	function add_person(kind) {

@@ -646,3 +646,39 @@ def deduction_save(month, loans=None, advances=None, absences=None):
     frappe.db.commit()
     out["errors"] = out["errors"][:10]
     return out
+
+
+@frappe.whitelist()
+def loan_create(employee, principal, expected_monthly=None,
+                loan_type="Loan", date_taken=None, reason=None):
+    """Record a new loan/advance in the ledger straight from the
+    deduction sheet - no page hopping."""
+    _require_access()
+    if "HR Manager" not in frappe.get_roles() and \
+            "System Manager" not in frappe.get_roles():
+        frappe.throw("Only HR Manager can record a loan",
+                     frappe.PermissionError)
+    info = frappe.db.get_value(
+        "Employee", employee,
+        ["employee_name", "department", "designation"], as_dict=True)
+    if not info:
+        frappe.throw(f"Employee {employee} not found")
+    doc = frappe.get_doc({
+        "doctype": "Staff Loan Advance",
+        "employee": employee,
+        "employee_name": info.employee_name,
+        "department": info.department,
+        "designation": info.designation,
+        "loan_type": loan_type or "Loan",
+        "status": "Active",
+        "principal": flt(principal),
+        "date_taken": date_taken or today(),
+        "expected_monthly": flt(expected_monthly or 0),
+        "total_repaid": 0,
+        "balance": flt(principal),
+        "reason": reason,
+    })
+    doc.insert()
+    frappe.db.commit()
+    return {"name": doc.name, "employee_name": info.employee_name,
+            "principal": flt(principal)}
