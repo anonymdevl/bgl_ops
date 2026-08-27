@@ -2,6 +2,16 @@
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.
 
+## 1.8.1 - 2026-08-27
+- Fix: typing in the Employee Hub no longer triggers the desk's global
+  search (workspace pages treat any keystroke as search - ours now stay
+  inside the hub).
+- Command Center gains the Employee 360 tab: search a person, pick a period
+  (this month / last month / 3 months / this year / all time) and see their
+  complete picture - biodata, gross/deductions/net actually paid, earnings
+  and deductions broken down by component, every salary slip, trips and
+  leave. Built for executive oversight.
+
 ## 1.8.0 - 2026-08-27
 - Employee Hub on both workspaces: type a name, get the person's card
   (photo/initials, branch, designation, joined, mobile, vehicle, basic,

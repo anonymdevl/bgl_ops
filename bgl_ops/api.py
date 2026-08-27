@@ -1174,3 +1174,65 @@ def employee_card(employee):
             "loan_balance": flt(sum(flt(l.balance) for l in loans), 2),
             "leave_taken": leave_taken, "recent": recent,
             "trips_month": trips_month}
+
+
+@frappe.whitelist()
+def employee_360(employee, from_date=None, to_date=None):
+    """Executive view: everything about one person for a period -
+    biodata, earnings and deductions by component, salary slips, trips,
+    loans and leave."""
+    _require_access()
+    from_date = from_date or f"{getdate(today()).year}-01-01"
+    to_date = to_date or today()
+    card = employee_card(employee)
+
+    slips = _q(
+        """select name, start_date, end_date, gross_pay, total_deduction,
+                  net_pay, docstatus
+           from `tabSalary Slip`
+           where employee=%(e)s and docstatus=1
+             and start_date >= %(f)s and end_date <= %(t)s
+           order by start_date desc""",
+        {"e": employee, "f": from_date, "t": to_date})
+
+    def comp_rows(parentfield):
+        return _q(
+            """select sd.salary_component, sum(sd.amount) amount,
+                      count(distinct ss.name) months
+               from `tabSalary Detail` sd
+               inner join `tabSalary Slip` ss on ss.name = sd.parent
+               where ss.employee=%(e)s and ss.docstatus=1
+                 and ss.start_date >= %(f)s and ss.end_date <= %(t)s
+                 and sd.parentfield=%(pf)s and ifnull(sd.amount,0) != 0
+               group by sd.salary_component
+               order by amount desc""",
+            {"e": employee, "f": from_date, "t": to_date, "pf": parentfield})
+
+    trips = _q(
+        """select ifnull(sum(quantity),0) qty, ifnull(sum(amount),0) amt,
+                  count(*) days
+           from `tabDaily Trip Log`
+           where employee=%(e)s and docstatus=1
+             and log_date between %(f)s and %(t)s""",
+        {"e": employee, "f": from_date, "t": to_date})[0]
+
+    leaves = _q(
+        """select leave_type, ifnull(sum(total_leave_days),0) days
+           from `tabLeave Application`
+           where employee=%(e)s and docstatus=1 and status='Approved'
+             and from_date >= %(f)s and to_date <= %(t)s
+           group by leave_type""",
+        {"e": employee, "f": from_date, "t": to_date})
+
+    return {
+        "from_date": from_date, "to_date": to_date,
+        "card": card,
+        "slips": slips,
+        "gross": flt(sum(flt(s.gross_pay) for s in slips), 2),
+        "deductions_total": flt(sum(flt(s.total_deduction) for s in slips), 2),
+        "net": flt(sum(flt(s.net_pay) for s in slips), 2),
+        "earnings_by_component": comp_rows("earnings"),
+        "deductions_by_component": comp_rows("deductions"),
+        "trips": trips,
+        "leaves": leaves,
+    }

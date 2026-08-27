@@ -280,6 +280,7 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
     <button class="tab" data-v="trips">Trips &amp; Cubic</button>
     <button class="tab" data-v="loans">Loans &amp; Advances</button>
     <button class="tab" data-v="leave">Leave</button>
+    <button class="tab" data-v="people">Employee 360</button>
     <button class="tab" data-v="sheet">Log Sheet</button>
   </div>
 </div></header>
@@ -393,6 +394,28 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
   </section>
 
   <!-- ============ LOG SHEET ============ -->
+  <section class="view" id="v-people">
+    <div class="panel">
+      <div class="phead"><h3>Employee 360</h3><span class="tag t-new">one person, every number</span></div>
+      <p class="cap">Type a name, pick a period. Biodata, every earning and deduction, salary slips, trips and leave - the complete financial picture of one employee.</p>
+      <div class="sheetbar">
+        <span style="position:relative;flex:1;max-width:340px">
+          <input id="p360-q" type="text" placeholder="Type a name - e.g. Hope, Godwin..." autocomplete="off"
+            style="width:100%;background:var(--panel2,rgba(255,255,255,.05));border:1px solid var(--line);color:inherit;border-radius:9px;padding:9px 13px;font:inherit;font-size:13px">
+          <span id="p360-drop" style="position:absolute;top:calc(100%+4px);left:0;right:0;background:var(--panel,#15151a);border:1px solid var(--line);border-radius:10px;z-index:60;display:none;overflow:hidden"></span>
+        </span>
+        <select id="p360-period">
+          <option value="ytd">This year</option>
+          <option value="mtd">This month</option>
+          <option value="lastmonth">Last month</option>
+          <option value="3m">Last 3 months</option>
+          <option value="all">All time</option>
+        </select>
+      </div>
+      <div id="p360-body"><p class="cap" style="padding:8px 2px">Search for an employee to begin.</p></div>
+    </div>
+  </section>
+
   <section class="view" id="v-sheet">
     <div class="panel">
       <div class="phead"><h3>Bulk trip sheet</h3><span class="tag t-new">the paper sheet, digital</span></div>
@@ -1271,6 +1294,90 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
           '<span style="color:#e8776b">NOT READY - fix the red lines</span>';
       });
     });
+  })();
+
+  // ============ Employee 360 ============
+  (function(){
+    var box=el('p360-q'), drop=el('p360-drop'), body=el('p360-body'), per=el('p360-period');
+    if(!box) return;
+    var CUR=null, tmr=null;
+    function period(){
+      var now=new Date(), y=now.getFullYear(), m=now.getMonth();
+      function d(x){ return x.toISOString().slice(0,10); }
+      var v=per.value;
+      if(v==='mtd') return [d(new Date(y,m,1)), d(now)];
+      if(v==='lastmonth') return [d(new Date(y,m-1,1)), d(new Date(y,m,0))];
+      if(v==='3m') return [d(new Date(y,m-3,1)), d(now)];
+      if(v==='all') return ['2000-01-01', d(now)];
+      return [y+'-01-01', d(now)];
+    }
+    function fmt(v){ return (Math.round((+v||0)*100)/100).toLocaleString('en-GH',{minimumFractionDigits:2}); }
+    box.addEventListener('input', function(){
+      clearTimeout(tmr);
+      if(box.value.trim().length<2){ drop.style.display='none'; return; }
+      tmr=setTimeout(function(){
+        api('employee_search', {q:box.value}, function(rows){
+          if(!rows.length){ drop.style.display='none'; return; }
+          drop.innerHTML=rows.map(function(e){
+            return '<div data-e="'+e.name+'" style="padding:9px 13px;font-size:13px;cursor:pointer">'+e.employee_name+
+              ' <span style="color:var(--muted);font-size:11px">'+(e.designation||'')+' - '+(e.branch||'')+'</span></div>';
+          }).join('');
+          drop.style.display='block';
+          drop.querySelectorAll('div').forEach(function(dd){
+            dd.addEventListener('mouseenter', function(){ dd.style.background='rgba(240,160,75,.1)'; });
+            dd.addEventListener('mouseleave', function(){ dd.style.background='none'; });
+            dd.addEventListener('click', function(){ drop.style.display='none'; box.value=''; CUR=dd.dataset.e; load360(); });
+          });
+        });
+      }, 250);
+    });
+    per.addEventListener('change', function(){ if(CUR) load360(); });
+    document.addEventListener('click', function(ev){ if(!drop.contains(ev.target)&&ev.target!==box) drop.style.display='none'; });
+    function load360(){
+      var pr=period();
+      api('employee_360', {employee:CUR, from_date:pr[0], to_date:pr[1]}, function(d){
+        var e=(d.card||{}).emp||{}, c=d.card||{};
+        var ini=(e.employee_name||'?').split(' ').map(function(w){return w[0]||'';}).slice(0,2).join('').toUpperCase();
+        function kpi(l,v){ return '<div class="panel" style="padding:13px 16px"><div class="cap" style="margin:0 0 3px">'+l+'</div><div style="font-family:\'Space Grotesk\',sans-serif;font-size:20px;font-weight:700">'+v+'</div></div>'; }
+        function table(title, rows, cols){
+          return '<div class="panel"><h3>'+title+'</h3><div class="twrap"><table><thead><tr>'+
+            cols.map(function(cc){ return '<th'+(cc[2]?' class="r"':'')+'>'+cc[0]+'</th>'; }).join('')+'</tr></thead><tbody>'+
+            (rows.length? rows.map(function(r){
+              return '<tr>'+cols.map(function(cc){
+                var v=r[cc[1]];
+                if(cc[3]) v=fmt(v);
+                return '<td'+(cc[2]?' class="r"':'')+'>'+(v==null?'-':v)+'</td>'; }).join('')+'</tr>';
+            }).join('') : '<tr><td class="empty" colspan="'+cols.length+'">Nothing in this period.</td></tr>')+
+            '</tbody></table></div></div>';
+        }
+        var h='<div class="panel" style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">'+
+          '<span style="width:54px;height:54px;border-radius:50%;background:rgba(240,160,75,.15);color:var(--amber);display:grid;place-items:center;font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:18px;border:1.5px solid rgba(240,160,75,.4);'+(e.image?'background-image:url(\''+e.image+'\');background-size:cover;background-position:center;color:transparent;':'')+'">'+ini+'</span>'+
+          '<div><b style="font-family:\'Space Grotesk\',sans-serif;font-size:16px">'+e.employee_name+'</b>'+
+          '<div class="cap" style="margin:2px 0 0">'+e.name+' - '+(e.designation||'')+' - '+(e.branch||'')+' - '+(e.status||'')+
+          (e.date_of_joining? ' - joined '+e.date_of_joining:'')+(e.cell_number? ' - '+e.cell_number:'')+
+          (e.custom_truck_no? ' - vehicle '+e.custom_truck_no:'')+'</div></div>'+
+          '<div style="margin-left:auto" class="cap">Period: '+d.from_date+' to '+d.to_date+'</div></div>';
+        h+='<div class="kpis" style="margin-top:12px">'+
+          kpi('Gross paid (GHS)', fmt(d.gross))+
+          kpi('Deductions (GHS)', fmt(d.deductions_total))+
+          kpi('Net received (GHS)', fmt(d.net))+
+          kpi('Salary slips', (d.slips||[]).length)+
+          kpi('Trips/cubic', (+(d.trips||{}).qty||0)+' qty / GHS '+fmt((d.trips||{}).amt))+
+          kpi('Loan balance now', c.loan_balance? 'GHS '+fmt(c.loan_balance):'none')+
+          '</div>';
+        h+='<div class="grid2" style="margin-top:12px">'+
+          table('Earnings by component', d.earnings_by_component||[],
+            [['Component','salary_component'],['Months','months',1],['Total (GHS)','amount',1,1]])+
+          table('Deductions by component', d.deductions_by_component||[],
+            [['Component','salary_component'],['Months','months',1],['Total (GHS)','amount',1,1]])+
+          '</div>';
+        h+=table('Salary slips in period', d.slips||[],
+          [['From','start_date'],['To','end_date'],['Gross','gross_pay',1,1],['Deductions','total_deduction',1,1],['Net','net_pay',1,1]]);
+        if((d.leaves||[]).length)
+          h+=table('Leave taken', d.leaves, [['Type','leave_type'],['Days','days',1]]);
+        body.innerHTML=h;
+      });
+    }
   })();
 })();
 </script>
