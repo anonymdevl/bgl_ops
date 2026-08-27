@@ -2,6 +2,15 @@
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.
 
+## 1.8.5 - 2026-08-27
+- Employee Hub on BGL Operations and BGL Executive can now be hidden:
+  click the "Employee Hub" title to collapse or expand it (the choice is
+  remembered per browser).
+- Employee 360 now shows the full leave picture: leave balance as of today
+  (allocated / taken / days left per type), pending leave requests, and
+  leave encashment requests with their status (Requested / Approved /
+  Paid / Rejected, colour-coded), alongside leave taken in the period.
+
 ## 1.8.4 - 2026-08-27
 - Fix: readiness stones no longer show DONE for steps that simply have no data
   yet (post-purge "no logs yet" now shows as OPEN, not complete).

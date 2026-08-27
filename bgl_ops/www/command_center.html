@@ -1373,8 +1373,18 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
           '</div>';
         h+=table('Salary slips in period', d.slips||[],
           [['From','start_date'],['To','end_date'],['Gross','gross_pay',1,1],['Deductions','total_deduction',1,1],['Net','net_pay',1,1]]);
+        h+='<div class="grid2" style="margin-top:12px">'+
+          table('Leave balance (as of today)', d.leave_balances||[],
+            [['Type','leave_type'],['Allocated','allocated',1],['Taken','taken',1],['Days left','remaining',1]])+
+          table('Pending leave requests', d.pending_leaves||[],
+            [['Type','leave_type'],['From','from_date'],['To','to_date'],['Days','days',1],['Status','status']])+
+          '</div>';
+        h+=table('Leave encashment requests', (d.encashments||[]).map(function(x){
+            var col=x.status==='Paid'?'var(--good,#2fb56f)':(x.status==='Rejected'?'var(--bad,#e8776b)':'var(--amber,#f0a04b)');
+            x=Object.assign({},x); x.status='<span style="color:'+col+';font-weight:700">'+x.status+'</span>'; return x; }),
+          [['Date','request_date'],['Type','leave_type'],['Days','days',1],['Amount (GHS)','amount',1,1],['Status','status']]);
         if((d.leaves||[]).length)
-          h+=table('Leave taken', d.leaves, [['Type','leave_type'],['Days','days',1]]);
+          h+=table('Leave taken in this period', d.leaves, [['Type','leave_type'],['Days','days',1]]);
         body.innerHTML=h;
       });
     }

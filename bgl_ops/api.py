@@ -1229,6 +1229,44 @@ def employee_360(employee, from_date=None, to_date=None):
            group by leave_type""",
         {"e": employee, "f": from_date, "t": to_date})
 
+    # --- leave picture (as of today, not just the period) ---
+    allocs = _q(
+        """select leave_type, from_date, to_date,
+                  sum(total_leaves_allocated) allocated
+           from `tabLeave Allocation`
+           where employee=%(e)s and docstatus=1
+             and %(d)s between from_date and to_date
+           group by leave_type, from_date, to_date""",
+        {"e": employee, "d": today()})
+    leave_balances = []
+    for a in allocs:
+        taken = _q(
+            """select ifnull(sum(total_leave_days),0) v
+               from `tabLeave Application`
+               where employee=%(e)s and docstatus=1 and status='Approved'
+                 and leave_type=%(lt)s
+                 and from_date >= %(f)s and to_date <= %(t)s""",
+            {"e": employee, "lt": a.leave_type,
+             "f": a.from_date, "t": a.to_date})[0].v
+        leave_balances.append({
+            "leave_type": a.leave_type,
+            "allocated": flt(a.allocated, 1),
+            "taken": flt(taken, 1),
+            "remaining": flt(flt(a.allocated) - flt(taken), 1)})
+
+    pending_leaves = _q(
+        """select name, leave_type, from_date, to_date,
+                  total_leave_days days, status
+           from `tabLeave Application`
+           where employee=%(e)s and docstatus=0
+           order by from_date desc limit 20""", {"e": employee})
+
+    encashments = _q(
+        """select name, leave_type, request_date, days, amount, status
+           from `tabLeave Encashment Request`
+           where employee=%(e)s
+           order by request_date desc limit 20""", {"e": employee})
+
     return {
         "from_date": from_date, "to_date": to_date,
         "card": card,
@@ -1240,4 +1278,7 @@ def employee_360(employee, from_date=None, to_date=None):
         "deductions_by_component": comp_rows("deductions"),
         "trips": trips,
         "leaves": leaves,
+        "leave_balances": leave_balances,
+        "pending_leaves": pending_leaves,
+        "encashments": encashments,
     }
