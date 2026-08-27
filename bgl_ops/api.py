@@ -1111,3 +1111,66 @@ def approve_group(month, group):
             errors.append(f"{n}: {ex}")
     frappe.db.commit()
     return {"approved": done, "errors": errors[:8]}
+
+
+# ---------------------------------------------------------------------------
+# Employee Hub (cockpit)
+# ---------------------------------------------------------------------------
+
+@frappe.whitelist()
+def employee_search(q):
+    """Quick name search for the cockpit Employee Hub."""
+    _require_access()
+    q = (q or "").strip()
+    if len(q) < 2:
+        return []
+    return _q(
+        """select name, employee_name, designation, branch, status
+           from `tabEmployee`
+           where employee_name like %(q)s or name like %(q)s
+           order by (status='Active') desc, employee_name limit 8""",
+        {"q": f"%{q}%"})
+
+
+@frappe.whitelist()
+def employee_card(employee):
+    """Everything HR needs about one person, in one call."""
+    _require_access()
+    e = frappe.db.get_value(
+        "Employee", employee,
+        ["name", "employee_name", "designation", "department", "branch",
+         "status", "date_of_joining", "cell_number", "personal_email",
+         "custom_truck_no", "image", "date_of_birth", "company"],
+        as_dict=True)
+    if not e:
+        frappe.throw("Employee not found")
+    base = flt(frappe.db.get_value(
+        "Salary Structure Assignment",
+        {"employee": employee, "docstatus": 1}, "base",
+        order_by="from_date desc"))
+    loans = _q(
+        """select name, loan_type, principal, ifnull(total_repaid,0) repaid,
+                  ifnull(balance,0) balance
+           from `tabStaff Loan Advance`
+           where employee=%(e)s and status='Active'""", {"e": employee})
+    leave_taken = flt(_q(
+        """select ifnull(sum(total_leave_days),0) v from `tabLeave Application`
+           where employee=%(e)s and docstatus=1 and status='Approved'
+             and from_date >= %(y)s""",
+        {"e": employee, "y": f"{getdate(today()).year}-01-01"})[0].v)
+    recent = _q(
+        """select name, salary_component, amount, payroll_date, docstatus
+           from `tabAdditional Salary`
+           where employee=%(e)s and docstatus < 2
+           order by payroll_date desc, creation desc limit 5""",
+        {"e": employee})
+    trips_month = _q(
+        """select ifnull(sum(quantity),0) qty, ifnull(sum(amount),0) amt
+           from `tabDaily Trip Log`
+           where employee=%(e)s and docstatus < 2
+             and log_date >= %(ms)s""",
+        {"e": employee, "ms": get_first_day(today())})[0]
+    return {"emp": e, "base": base, "loans": loans,
+            "loan_balance": flt(sum(flt(l.balance) for l in loans), 2),
+            "leave_taken": leave_taken, "recent": recent,
+            "trips_month": trips_month}

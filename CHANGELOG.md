@@ -2,6 +2,18 @@
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.
 
+## 1.8.0 - 2026-08-27
+- Employee Hub on both workspaces: type a name, get the person's card
+  (photo/initials, branch, designation, joined, mobile, vehicle, basic,
+  loan balance, leave taken, this month's trips) with one-click actions -
+  open record, new leave, loans/advances/absence, payroll entries, salary
+  slips, trip logs. Executive gets the read-only version. HR never has to
+  leave the cockpit.
+
+## 1.7.6 - 2026-08-27
+- Login now lands BGL users directly in their cockpit (BGL Operations, or
+  BGL Executive for viewers), skipping the v16 multi-app selector screen.
+
 ## 1.7.5 - 2026-08-27
 - BGL Executive brought to full parity with the Operations cockpit: same
   five-stone trail (read-only, badge says HAPPENING NOW), numbered/check

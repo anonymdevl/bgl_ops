@@ -26,6 +26,10 @@ def set_default_workspace(login_manager=None):
             if frappe.db.exists("Workspace", target):
                 frappe.db.set_value("User", user, "default_workspace",
                                     target, update_modified=False)
+        # skip the /apps selector screen: land straight in the cockpit
+        route = "/app/" + target.lower().replace(" ", "-")
+        if getattr(frappe.local, "response", None) is not None:
+            frappe.local.response["home_page"] = route
     except Exception:
         frappe.log_error(frappe.get_traceback(),
                          "bgl_ops set_default_workspace")
