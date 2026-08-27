@@ -32,7 +32,7 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 	page.add_inner_button('Unlock Month', unlock_month);
 	page.add_inner_button('Print Sheet', print_sheet);
 
-	var body = $('<div class="tls-body"></div>').appendTo(page.main);
+	var body = $('<div class="tls-body" style="margin:0 20px 40px"></div>').appendTo(page.main);
 	$('<style>\
 		.tls-body{margin-top:10px}\
 		.tls-scroll{overflow:auto;max-height:70vh;border:1px solid var(--border-color);border-radius:8px}\

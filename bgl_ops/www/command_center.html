@@ -1052,13 +1052,14 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
       el('dd-save').disabled=false; el('dd-print').disabled=false;
     });
   });
+  function ddRm(){ return '<td class="dd-rm" title="Remove from this month" style="cursor:pointer;color:#e8776b;font-weight:800;width:24px;text-align:center">&times;</td>'; }
   function ddAdvRow(emp,name,last,val){
     return '<tr data-emp="'+emp+'"><td class="l">'+name+'</td><td>'+last+'</td>'+
-      '<td><input type="number" min="0" step="0.01" class="da" value="'+(Math.round(val*100)/100)+'"></td></tr>';
+      '<td><input type="number" min="0" step="0.01" class="da" value="'+(Math.round(val*100)/100)+'"></td>'+ddRm()+'</tr>';
   }
   function ddAbsRow(emp,name,days){
     return '<tr data-emp="'+emp+'"><td class="l">'+name+'</td>'+
-      '<td><input type="number" min="0" step="0.5" class="db" value="'+(+days||0)+'"></td><td class="est">-</td></tr>';
+      '<td><input type="number" min="0" step="0.5" class="db" value="'+(+days||0)+'"></td><td class="est">-</td>'+ddRm()+'</tr>';
   }
   function renderDed(){
     var mi=parseInt(DEDM.slice(5,7),10)-1, label=MONTHS[mi]+' '+DEDM.slice(0,4);
@@ -1077,7 +1078,7 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
     h+='<button class="ddadd" id="dd-addloan">+ Add loan / advance</button>';
 
     h+='<div class="ddh">2 - Salary Advances <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"> - pre-filled from last month, deducted in full this month</span></div>'+
-      '<div class="twrap"><table class="ddt" id="dd-adv"><thead><tr><th class="l">Employee</th><th>Last month</th><th>Advance to deduct</th></tr></thead><tbody>';
+      '<div class="twrap"><table class="ddt" id="dd-adv"><thead><tr><th class="l">Employee</th><th>Last month</th><th>Advance to deduct</th><th></th></tr></thead><tbody>';
     var seen={};
     (DED.prev_advances||[]).forEach(function(a){
       seen[a.employee]=1;
@@ -1089,23 +1090,35 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
       seen[x.employee]=1;
       h+=ddAdvRow(x.employee, ddEmpName(x.employee), '-', +x.amount);
     });
-    h+='<tr class="total"><td class="l">TOTAL ADVANCES</td><td></td><td id="dd-ta"></td></tr></tbody></table></div>'+
+    h+='<tr class="total"><td class="l">TOTAL ADVANCES</td><td></td><td id="dd-ta"></td><td></td></tr></tbody></table></div>'+
       '<button class="ddadd" id="dd-addadv">+ Add employee</button>';
 
     h+='<div class="ddh">3 - Absent Days <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"> - days only; the amount ((days/22) x Basic) is computed and uploaded for you</span></div>'+
-      '<div class="twrap"><table class="ddt" id="dd-abs"><thead><tr><th class="l">Employee</th><th>Days absent</th><th>Deduction (auto)</th></tr></thead><tbody>';
+      '<div class="twrap"><table class="ddt" id="dd-abs"><thead><tr><th class="l">Employee</th><th>Days absent</th><th>Deduction (auto)</th><th></th></tr></thead><tbody>';
     (DED.drafts||[]).forEach(function(x){
       if(x.salary_component!=='Absent') return;
       var base=+((DED.bases||{})[x.employee])||0;
       var days=base>0? Math.round((+x.amount*22/base)*2)/2 : 0;
       h+=ddAbsRow(x.employee, ddEmpName(x.employee), days);
     });
-    h+='<tr class="total"><td class="l">TOTAL</td><td id="dd-td"></td><td id="dd-tb"></td></tr></tbody></table></div>'+
+    h+='<tr class="total"><td class="l">TOTAL</td><td id="dd-td"></td><td id="dd-tb"></td><td></td></tr></tbody></table></div>'+
       '<button class="ddadd" id="dd-addabs">+ Add employee</button>';
 
     el('dd-body').innerHTML=h;
     el('dd-body').querySelectorAll('input').forEach(function(i){ i.addEventListener('input', ddTotals); });
     el('dd-addloan').addEventListener('click', ddAddLoan);
+    el('dd-body').querySelectorAll('.dd-rm').forEach(function(td){
+      td.addEventListener('click', function(){
+        var tr=td.closest('tr');
+        var removed=tr.classList.toggle('dd-removed');
+        tr.style.textDecoration=removed?'line-through':'none';
+        tr.querySelectorAll('input').forEach(function(i){
+          if(removed){ i.dataset.prev=i.value; i.value=0; i.disabled=true; i.style.opacity=.35; }
+          else { i.value=i.dataset.prev||0; i.disabled=false; i.style.opacity=1; }
+        });
+        ddTotals();
+      });
+    });
     el('dd-addadv').addEventListener('click', function(){ ddAdd('adv'); });
     el('dd-addabs').addEventListener('click', function(){ ddAdd('abs'); });
     ddTotals();

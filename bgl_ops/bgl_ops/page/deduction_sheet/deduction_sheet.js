@@ -26,7 +26,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 	page.set_secondary_action('Save Deductions', save_all);
 	page.add_inner_button('Print Sheet', print_sheet);
 
-	var body = $('<div class="dds-body" style="margin-top:10px"></div>').appendTo(page.main);
+	var body = $('<div class="dds-body" style="margin:10px 20px 40px"></div>').appendTo(page.main);
 	$('<style>\
 		.dds h4{margin:18px 0 6px;font-size:14px}\
 		.dds .sect-note{color:var(--text-muted);font-size:12px;margin:0 0 8px}\
@@ -110,7 +110,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		h += '<h4>2. Salary Advances - ' + label + '</h4>' +
 			'<p class="sect-note">Pre-filled from last month\'s submitted advances. Edit the exceptions, set 0 for no advance, add new people below. Advances are deducted in full this same month.</p>' +
 			'<table class="dds-t" id="dds-adv"><thead><tr>' +
-			'<th class="l">Employee</th><th>Last month</th><th>Advance to deduct</th></tr></thead><tbody>';
+			'<th class="l">Employee</th><th>Last month</th><th>Advance to deduct</th><th></th></tr></thead><tbody>';
 		var seen = {};
 		(d.prev_advances || []).forEach(function(a) {
 			seen[a.employee] = 1;
@@ -125,14 +125,14 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			var emp = (d.employees || []).filter(function(e) { return e.name === x.employee; });
 			h += adv_row(x.employee, emp.length ? emp[0].employee_name : x.employee, '-', flt(x.amount));
 		});
-		h += '<tr class="total"><td class="l">TOTAL ADVANCES</td><td></td><td id="tot-adv"></td></tr>';
+		h += '<tr class="total"><td class="l">TOTAL ADVANCES</td><td></td><td id="tot-adv"></td><td></td></tr>';
 		h += '</tbody></table>' +
 			'<button class="btn btn-xs btn-default dds-add" id="add-adv">+ Add employee</button>';
 
 		h += '<h4>3. Absent Days - ' + label + '</h4>' +
 			'<p class="sect-note">Enter DAYS only. The sheet computes the full amount ((days / 22) x Basic) and creates the Absent deduction draft exactly as HR uploads it today - offsetting net pay.</p>' +
 			'<table class="dds-t" id="dds-abs"><thead><tr>' +
-			'<th class="l">Employee</th><th>Days absent</th><th>Deduction (auto)</th></tr></thead><tbody>';
+			'<th class="l">Employee</th><th>Days absent</th><th>Deduction (auto)</th><th></th></tr></thead><tbody>';
 		(d.drafts || []).forEach(function(x) {
 			if (x.salary_component !== 'Absent') return;
 			var emp = (d.employees || []).filter(function(e) { return e.name === x.employee; });
@@ -140,7 +140,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			var days = base > 0 ? Math.round((flt(x.amount) * 22 / base) * 2) / 2 : 0;
 			h += abs_row(x.employee, emp.length ? emp[0].employee_name : x.employee, days);
 		});
-		h += '<tr class="total"><td class="l">TOTAL</td><td id="tot-abs-days"></td><td id="tot-abs"></td></tr>';
+		h += '<tr class="total"><td class="l">TOTAL</td><td id="tot-abs-days"></td><td id="tot-abs"></td><td></td></tr>';
 		h += '</tbody></table>' +
 			'<button class="btn btn-xs btn-default dds-add" id="add-abs">+ Add employee</button>';
 
@@ -172,6 +172,15 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		holder.find('#add-adv').on('click', function() { add_person('adv'); });
 		holder.find('#add-abs').on('click', function() { add_person('abs'); });
 		holder.find('#add-allow').on('click', function() { add_person('allow'); });
+		holder.find('.dds-rm').on('click', function() {
+			var tr = $(this).closest('tr');
+			var removed = tr.toggleClass('dds-removed').hasClass('dds-removed');
+			tr.find('input').prop('disabled', removed).css('opacity', removed ? .35 : 1);
+			if (removed) { tr.find('input').each(function() { $(this).data('prev', $(this).val()).val(0); }); }
+			else { tr.find('input').each(function() { $(this).val($(this).data('prev') || 0); }); }
+			tr.css('text-decoration', removed ? 'line-through' : 'none');
+			totals();
+		});
 		totals();
 	}
 
@@ -183,15 +192,19 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			'<td class="al-tot">-</td></tr>';
 	}
 
+	function rm_cell() {
+		return '<td class="dds-rm" title="Remove from this month (sets 0; saving removes any draft)" style="cursor:pointer;color:var(--red-500);font-weight:800;width:26px;text-align:center">&times;</td>';
+	}
+
 	function adv_row(emp, name, last, val) {
 		return '<tr data-emp="' + emp + '"><td class="l">' + name + '</td><td>' + last + '</td>' +
-			'<td><input type="number" min="0" step="0.01" class="da-amt" value="' + flt(val, 2) + '"></td></tr>';
+			'<td><input type="number" min="0" step="0.01" class="da-amt" value="' + flt(val, 2) + '"></td>' + rm_cell() + '</tr>';
 	}
 
 	function abs_row(emp, name, days) {
 		return '<tr data-emp="' + emp + '"><td class="l">' + name + '</td>' +
 			'<td><input type="number" min="0" step="0.5" class="db-days" value="' + flt(days) + '"></td>' +
-			'<td class="est"></td></tr>';
+			'<td class="est"></td>' + rm_cell() + '</tr>';
 	}
 
 	function add_loan() {

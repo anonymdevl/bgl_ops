@@ -413,7 +413,7 @@ def generate_payroll_drafts(site, month):
                 "amount": flt(g["amount"], 2),
                 "payroll_date": payroll_date,
                 "overwrite_salary_structure_amount": 0,
-                "remark": (f"Auto-generated from {site} trip sheet "
+                "custom_bgl_note": (f"Auto-generated from {site} trip sheet "
                            f"{month_label}: {len(g['log_names'])} day(s), "
                            f"total qty {flt(g['qty'], 2)}."),
             })
@@ -577,7 +577,7 @@ def _upsert_deduction_draft(employee, component, amount, m_end, remark,
     if existing:
         doc = frappe.get_doc("Additional Salary", existing)
         doc.amount = flt(amount, 2)
-        doc.remark = remark
+        doc.custom_bgl_note = remark
         doc.overwrite_salary_structure_amount = overwrite
         doc.save()
         return "updated"
@@ -589,7 +589,7 @@ def _upsert_deduction_draft(employee, component, amount, m_end, remark,
         "amount": flt(amount, 2),
         "payroll_date": m_end,
         "overwrite_salary_structure_amount": overwrite,
-        "remark": remark,
+        "custom_bgl_note": remark,
     })
     doc.insert()  # stays DRAFT for HR review
     return "created"
@@ -1019,7 +1019,7 @@ def review_board(month):
 
     rows = _q(
         """select name, employee, employee_name, salary_component,
-                  amount, docstatus, remark
+                  amount, docstatus, ifnull(custom_bgl_note, '') as remark
            from `tabAdditional Salary`
            where payroll_date=%(d)s and docstatus < 2
              and salary_component in %(comps)s

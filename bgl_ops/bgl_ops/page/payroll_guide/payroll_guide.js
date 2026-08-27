@@ -30,7 +30,7 @@ frappe.pages['payroll-guide'].on_page_load = function(wrapper) {
 		['Who can do what',
 		'<b>HR User</b>: enter trips, view sheets and reports. <b>HR Manager</b>: everything + Submit Month, Unlock Month, Generate Trip Earnings, Save Deductions, Approve. <b>Command Center Viewer</b> (management): the Command Center and BGL Executive workspace.']
 	];
-	var body = $('<div style="max-width:840px;margin-top:8px"></div>').appendTo(page.main);
+	var body = $('<div style="max-width:840px;margin:8px 20px 40px"></div>').appendTo(page.main);
 	$('<style>.pg-s{border:1px solid var(--border-color);border-radius:12px;margin-bottom:10px;background:var(--fg-color);overflow:hidden}\
 .pg-h{padding:13px 17px;cursor:pointer;font-weight:700;font-size:14px;display:flex;gap:10px;align-items:center}\
 .pg-h:hover{background:var(--subtle-fg)}\

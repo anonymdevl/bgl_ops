@@ -7,3 +7,11 @@
 	0%, 100% { transform: scale(1); opacity: .82; filter: drop-shadow(0 0 0 rgba(241,7,48,0)); }
 	50% { transform: scale(1.06); opacity: 1; filter: drop-shadow(0 0 22px rgba(241,7,48,.35)); }
 }
+
+/* BGL: let workspace content breathe - free the narrow editor column */
+.layout-main-section .codex-editor .ce-block__content {
+	max-width: min(1400px, 96%) !important;
+}
+.layout-main-section .codex-editor__redactor {
+	padding-bottom: 40px !important;
+}

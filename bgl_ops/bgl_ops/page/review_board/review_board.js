@@ -17,7 +17,7 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 	}
 	page.set_primary_action('Load', load);
 
-	var body = $('<div style="margin-top:10px"></div>').appendTo(page.main);
+	var body = $('<div style="margin:10px 20px 40px"></div>').appendTo(page.main);
 	$('<style>\
 		.rvb-g{border:1px solid var(--border-color);border-radius:12px;margin-bottom:12px;background:var(--fg-color);overflow:hidden}\
 		.rvb-h{display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer}\

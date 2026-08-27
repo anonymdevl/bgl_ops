@@ -354,5 +354,16 @@
   "in_standard_filter": 1,
   "description": "Vehicle usually operated by this employee (truck, pickup, car). Auto-fills into Daily Trip Logs.",
   "options": "BGL Vehicle"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Additional Salary-custom_bgl_note",
+  "dt": "Additional Salary",
+  "fieldname": "custom_bgl_note",
+  "label": "BGL Note",
+  "fieldtype": "Small Text",
+  "insert_after": "amount",
+  "read_only": 1,
+  "description": "Where this entry came from (sheet, month, workings)"
  }
 ]
