@@ -4,7 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BGL Command Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 <style>
+h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01em}
+
   :root{
     --bg:#0b0e13; --bg2:#0e1219; --panel:#141a23; --panel2:#1a2130; --line:#232c3d;
     --ink:#edf1f7; --muted:#94a0b4; --faint:#5f6b80;
@@ -236,9 +240,28 @@
 .ddadd{background:none;border:1px dashed var(--line);color:var(--muted);border-radius:8px;
   padding:4px 12px;font:inherit;font-size:12px;cursor:pointer;margin-top:6px}
 .ddadd:hover{color:#f0a04b;border-color:#f0a04b}
+.prl{display:flex;align-items:center;gap:11px;padding:9px 4px;border-bottom:1px solid var(--line);text-decoration:none;color:inherit}
+.prl:last-child{border-bottom:none}
+.prl .pst{width:20px;height:20px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:11px;font-weight:800}
+.pst.ok{background:rgba(78,203,141,.15);color:#4ecb8d;border:1.5px solid #4ecb8d}
+.pst.no{background:rgba(232,119,107,.12);color:#e8776b;border:1.5px solid #e8776b}
+.pst.wt{background:rgba(240,160,75,.12);color:#f0a04b;border:1.5px solid #f0a04b}
+.prl b{font-size:13px}
+.prl .pd{font-size:11.5px;color:var(--muted);margin-left:auto;text-align:right}
 </style>
 </head>
 <body>
+{% if denied %}
+<div style="min-height:100vh;display:grid;place-items:center;background:#0d0d10;color:#f4f7fc;font-family:'Inter',-apple-system,sans-serif;text-align:center;padding:30px">
+  <div style="max-width:420px">
+    <div style="font-size:38px;margin-bottom:14px">&#128274;</div>
+    <h2 style="margin:0 0 8px;font-size:21px">Reserved for management</h2>
+    <p style="color:#93a0b8;font-size:14px;line-height:1.6;margin:0 0 18px">Hello {{ full_name }} - the Command Center is limited to executive viewers. If you believe you should have access, ask your administrator for the <b style="color:#f0a04b">Command Center Viewer</b> role.</p>
+    <a href="/app" style="display:inline-block;background:#f0a04b;color:#191203;font-weight:700;text-decoration:none;padding:9px 22px;border-radius:10px;font-size:13.5px">Back to the desk</a>
+  </div>
+</div>
+{% else %}
+
 <div class="fx"><canvas id="net"></canvas><div class="aur"></div><div class="aur2"></div><div class="beam"></div><div class="vig"></div></div>
 <div class="shell">
 <header><div class="wrap">
@@ -313,6 +336,17 @@
         <p class="cap">Auto-surfaced signals</p>
         <div class="twrap"><table><tbody id="signals"></tbody></table></div>
       </div>
+    </div>
+
+    <div class="panel">
+      <div class="phead"><h3>Payroll readiness</h3><span class="tag t-new">pre-flight, month by month</span></div>
+      <div class="sheetbar" style="margin-bottom:6px">
+        <select id="pr-month"></select>
+        <button class="btn btn-g" id="pr-load">Check</button>
+        <span class="spacer" style="flex:1"></span>
+        <span id="pr-verdict" style="font-weight:800"></span>
+      </div>
+      <div id="pr-body"><p class="cap" style="padding:6px 2px">Pick a month and Check - every step of the payroll must be green before Payroll Entry.</p></div>
     </div>
   </section>
 
@@ -422,7 +456,7 @@
     </div>
 
     <div class="panel">
-      <div class="phead"><h3>Monthly deduction sheet</h3><span class="tag t-new">loans + advances + absences</span></div>
+      <div class="phead"><h3>Monthly Payroll Prep Sheet</h3><span class="tag t-new">loans + advances + absences + new hires + allowances</span></div>
       <p class="cap">Loans pre-fill from the ledger, advances carry forward from last month, absences are entered as days (the payslip computes the money). One Save writes the ledger and every draft deduction.</p>
       <div class="sheetbar">
         <select id="dd-month"></select>
@@ -778,6 +812,7 @@
     var N=Math.min(90, Math.round(innerWidth/16));
     for(var i=0;i<N;i++) P.push({x:Math.random()*innerWidth, y:Math.random()*innerHeight,
       vx:(Math.random()-.5)*.28, vy:(Math.random()-.5)*.28, r:Math.random()*1.6+.6,
+      ph:Math.random()*6.283, tw:.8+Math.random()*1.8,
       ci: Math.random()<.75 ? 0 : (Math.random()<.5 ? 1 : 2)});
     function tick(){
       var t=theme(), pal=PAL[t], al=ALPHA[t];
@@ -786,8 +821,9 @@
         var p=P[i];
         p.x+=p.vx; p.y+=p.vy;
         if(p.x<0||p.x>W) p.vx*=-1; if(p.y<0||p.y>H) p.vy*=-1;
-        cx.beginPath(); cx.arc(p.x,p.y,p.r,0,6.283);
-        cx.fillStyle='rgba('+pal[p.ci]+','+al.dot+')'; cx.fill();
+        var tk=.2+.8*(.5+.5*Math.sin(performance.now()/1000*p.tw+p.ph));
+        cx.beginPath(); cx.arc(p.x,p.y,p.r*(0.75+0.45*tk),0,6.283);
+        cx.fillStyle='rgba('+pal[p.ci]+','+(al.dot*1.15*tk).toFixed(3)+')'; cx.fill();
         for(var j=i+1;j<P.length;j++){
           var q=P[j], dx=p.x-q.x, dy=p.y-q.y, d2=dx*dx+dy*dy;
           if(d2<15000){
@@ -1196,7 +1232,35 @@
     var w=window.open('','_blank'); w.document.write(h); w.document.close();
     setTimeout(function(){ w.print(); }, 400);
   });
+
+  // ============ payroll readiness ============
+  (function(){
+    var sel=el('pr-month');
+    if(!sel) return;
+    MONTHS.forEach(function(m,i){ var o=document.createElement('option'); o.value=i; o.textContent=m; sel.appendChild(o); });
+    sel.value=new Date().getMonth();
+    el('pr-load').addEventListener('click', function(){
+      var mi=parseInt(sel.value,10), now=new Date(), y=now.getFullYear();
+      if(mi>now.getMonth()+1){ y-=1; }
+      var m=y+'-'+String(mi+1).padStart(2,'0');
+      api('payroll_readiness', {month:m}, function(r){
+        var h='';
+        (r.lines||[]).forEach(function(l){
+          var cls=l.ok? 'ok' : (l.warn? 'wt' : 'no');
+          var sym=l.ok? '&#10003;' : (l.warn? '!' : '&#10007;');
+          h+='<a class="prl" '+(l.link? 'href="'+l.link+'" target="_blank"' : '')+'>'+
+            '<span class="pst '+cls+'">'+sym+'</span><b>'+l.label+'</b>'+
+            '<span class="pd">'+l.detail+'</span></a>';
+        });
+        el('pr-body').innerHTML=h||'<p class="cap">No data.</p>';
+        el('pr-verdict').innerHTML = r.ready?
+          '<span style="color:#4ecb8d">READY for Payroll Entry</span>' :
+          '<span style="color:#e8776b">NOT READY - fix the red lines</span>';
+      });
+    });
+  })();
 })();
 </script>
+{% endif %}
 </body>
 </html>

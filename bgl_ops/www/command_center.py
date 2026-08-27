@@ -6,9 +6,11 @@ def get_context(context):
         frappe.local.flags.redirect_location = "/login?redirect-to=/command-center"
         raise frappe.Redirect
     roles = set(frappe.get_roles())
-    if not roles & {"System Manager", "HR Manager", "HR User"}:
-        frappe.throw("You do not have access to the Command Center",
-                     frappe.PermissionError)
+    if not roles & {"System Manager", "Command Center Viewer"}:
+        context.no_cache = 1
+        context.denied = 1
+        context.full_name = frappe.utils.get_fullname(frappe.session.user)
+        return context
     context.no_cache = 1
     context.full_name = frappe.utils.get_fullname(frappe.session.user)
     context.csrf_token = frappe.sessions.get_csrf_token()

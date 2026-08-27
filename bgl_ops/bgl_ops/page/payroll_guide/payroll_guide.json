@@ -1,0 +1,16 @@
+{
+ "doctype": "Page",
+ "name": "payroll-guide",
+ "page_name": "payroll-guide",
+ "title": "BGL Payroll Guide",
+ "icon": "octicon octicon-book",
+ "module": "BGL Ops",
+ "standard": "Yes",
+ "system_page": 0,
+ "roles": [
+  {"role": "HR User"},
+  {"role": "HR Manager"},
+  {"role": "System Manager"},
+  {"role": "Command Center Viewer"}
+ ]
+}

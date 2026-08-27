@@ -29,6 +29,7 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 	page.set_secondary_action('Save Drafts', save_drafts);
 	page.add_inner_button('Submit Month (lock)', submit_month);
 	page.add_inner_button('Generate Trip Earnings (Drafts)', generate_payroll_drafts);
+	page.add_inner_button('Unlock Month', unlock_month);
 	page.add_inner_button('Print Sheet', print_sheet);
 
 	var body = $('<div class="tls-body"></div>').appendTo(page.main);
@@ -171,6 +172,26 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 		});
 	}
 
+	function unlock_month() {
+		if (!state.sheet) { frappe.msgprint('Load a sheet first.'); return; }
+		frappe.confirm(
+			'Unlock ' + state.sheet.site + ' ' + state.sheet.month + ' for correction?<br><br>' +
+			'All locked logs return to editable drafts and any UNSUBMITTED earning drafts generated from them are deleted. ' +
+			'If earnings were already submitted to payroll, unlocking is refused until those are cancelled.',
+			function() {
+				frappe.call({
+					method: 'bgl_ops.api.unlock_month',
+					args: { site: state.sheet.site, month: state.sheet.month },
+					freeze: true, freeze_message: 'Unlocking...',
+					callback: function(r) {
+						frappe.show_alert({ message: r.message.unlocked + ' log(s) unlocked, ' + r.message.drafts_deleted + ' earning draft(s) removed. Next: correct the sheet, Save Drafts, then Submit Month again.', indicator: 'orange' });
+						load_sheet();
+					}
+				});
+			}
+		);
+	}
+
 	function print_sheet() {
 		if (!state.sheet) { frappe.msgprint('Load a sheet first.'); return; }
 		var d = state.sheet, sat = {}, sun = {};
@@ -269,7 +290,7 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 	function submit_month() {
 		if (!state.sheet) { frappe.msgprint('Load a sheet first.'); return; }
 		frappe.confirm(
-			'Submit ALL draft logs for ' + state.sheet.site + ' ' + state.sheet.month + '? This locks them for payroll.',
+			'Submit ALL draft logs for ' + state.sheet.site + ' ' + state.sheet.month + '?<br><br><b>This locks the month permanently for payroll.</b> Check every quantity and total before continuing - corrections after this point need an HR Manager to Unlock Month.',
 			function() {
 				frappe.call({
 					method: 'bgl_ops.api.submit_month',

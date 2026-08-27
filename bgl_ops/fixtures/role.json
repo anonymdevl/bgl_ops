@@ -1,0 +1,10 @@
+[
+ {
+  "doctype": "Role",
+  "name": "Command Center Viewer",
+  "role_name": "Command Center Viewer",
+  "desk_access": 1,
+  "disabled": 0,
+  "is_custom": 1
+ }
+]

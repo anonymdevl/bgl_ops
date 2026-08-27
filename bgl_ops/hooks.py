@@ -8,8 +8,18 @@ app_license = "Proprietary"
 # Target stack: Frappe v16 / ERPNext v16 / Frappe HR v16 (as on bgl.powersoftsystem.com)
 required_apps = ["erpnext", "hrms"]
 
+on_session_creation = "bgl_ops.boot.set_default_workspace"
+
+# website (login) + desk (splash) assets - plain files, no node build needed
+web_include_css = ["/assets/bgl_ops/css/bgl_login.css"]
+web_include_js = ["/assets/bgl_ops/js/bgl_login.js"]
+app_include_css = ["/assets/bgl_ops/css/bgl_desk.css"]
+
+
 # Everything this app owns is synced from ./fixtures on `bench migrate`.
 fixtures = [
+    {"dt": "Custom HTML Block", "filters": [["name", "in", ["BGL Payroll Cockpit", "BGL Executive Deck"]]]},
+    {"dt": "Role", "filters": [["name", "in", ["Command Center Viewer"]]]},
     {"dt": "DocType", "filters": [["name", "in", [
         "Daily Trip Log", "BGL Trip Rate",
         "Staff Loan Advance", "Staff Loan Repayment",

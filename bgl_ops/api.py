@@ -501,10 +501,65 @@ def deduction_sheet(month):
              on t.employee = ssa.employee and t.mx = ssa.from_date
            where ssa.docstatus=1""")
 
+    # New hires: joining date inside this month
+    new_hires = _q(
+        """select name, employee_name, designation, branch, date_of_joining
+           from `tabEmployee`
+           where status='Active'
+             and date_of_joining between %(f)s and %(t)s
+           order by date_of_joining""",
+        {"f": f"{month}-01", "t": m_end})
+    base_map = {b.employee: flt(b.base) for b in bases}
+    year, mon = int(month[:4]), int(month[5:7])
+    for h in new_hires:
+        doj = getdate(h.date_of_joining)
+        # suggested worked days: weekdays from joining to month end, cap 22
+        wd = 0
+        d = doj
+        last = getdate(m_end)
+        while d <= last:
+            if d.weekday() < 5:
+                wd += 1
+            d = add_days(d, 1)
+        h["days_suggested"] = min(wd, 22)
+        h["existing_base"] = base_map.get(h.name, 0)
+
+    # Allowances prefill: last month's submitted uploads per component
+    ALLOWANCE_COMPONENTS = ("Housing Allowance", "Transport Allowance",
+                            "Extra Duty Allowance", "Overtime Allowance")
+    prev_allow = _q(
+        """select employee, employee_name, salary_component, amount
+           from `tabAdditional Salary`
+           where docstatus=1 and payroll_date=%(d)s
+             and salary_component in %(comps)s
+           order by employee_name""",
+        {"d": prev_end, "comps": ALLOWANCE_COMPONENTS})
+    allow_drafts = _q(
+        """select employee, salary_component, amount
+           from `tabAdditional Salary`
+           where docstatus=0 and payroll_date=%(d)s
+             and salary_component in %(comps)s""",
+        {"d": m_end, "comps": ALLOWANCE_COMPONENTS})
+    # proration drafts already saved (Basic Salary overwrite)
+    proration_drafts = _q(
+        """select employee, amount from `tabAdditional Salary`
+           where docstatus=0 and payroll_date=%(d)s
+             and salary_component='Basic Salary'""",
+        {"d": m_end})
+    # earner type per employee: Trip/Cubic designations get NO fixed OT
+    ot_locked = {e.name: (e.designation in PAY_GROUPS and
+                          GROUP_UNIT.get(e.designation) in ("Trip", "Cubic"))
+                 for e in _q("select name, designation from `tabEmployee` where status='Active'")}
+
     return {"month": month, "month_end": m_end, "prev_month_end": prev_end,
             "loans": loans, "drafts": drafts, "prev_advances": prev_adv,
             "employees": employees,
-            "bases": {b.employee: flt(b.base) for b in bases}}
+            "bases": base_map,
+            "new_hires": new_hires,
+            "proration_drafts": proration_drafts,
+            "prev_allowances": prev_allow,
+            "allowance_drafts": allow_drafts,
+            "ot_locked": ot_locked}
 
 
 def _upsert_deduction_draft(employee, component, amount, m_end, remark,
@@ -541,7 +596,8 @@ def _upsert_deduction_draft(employee, component, amount, m_end, remark,
 
 
 @frappe.whitelist()
-def deduction_save(month, loans=None, advances=None, absences=None):
+def deduction_save(month, loans=None, advances=None, absences=None,
+                   new_hires=None, allowances=None):
     """Save the Monthly Deduction Sheet.
 
     loans:    [{loan, amount}]        -> ledger repayment + draft 'Loans'
@@ -560,12 +616,15 @@ def deduction_save(month, loans=None, advances=None, absences=None):
     loans = json.loads(loans) if isinstance(loans, str) else (loans or [])
     advances = json.loads(advances) if isinstance(advances, str) else (advances or [])
     absences = json.loads(absences) if isinstance(absences, str) else (absences or [])
+    new_hires = json.loads(new_hires) if isinstance(new_hires, str) else (new_hires or [])
+    allowances = json.loads(allowances) if isinstance(allowances, str) else (allowances or [])
 
     m_end = _month_end(month)
     year, mon = int(month[:4]), int(month[5:7])
     month_label = f"{calendar.month_name[mon]} {year}"
     ref = f"PAYROLL-{month}"
-    out = {"loans": 0, "advances": 0, "absences": 0, "cleared": [], "errors": []}
+    out = {"loans": 0, "advances": 0, "absences": 0, "new_hires": 0,
+           "allowances": 0, "ssa_created": [], "cleared": [], "errors": []}
 
     for row in loans:
         try:
@@ -643,6 +702,85 @@ def deduction_save(month, loans=None, advances=None, absences=None):
         except Exception as ex:
             out["errors"].append(f"Absence {row.get('employee')}: {ex}")
 
+    # ---- New hire proration: Basic Salary override + next-month SSA ----
+    if mon == 12:
+        nxt_start = f"{year + 1}-01-01"
+    else:
+        nxt_start = f"{year}-{mon + 1:02d}-01"
+    for row in new_hires:
+        try:
+            emp = row.get("employee")
+            actual = flt(row.get("actual_basic") or 0)
+            days = flt(row.get("days") or 0)
+            if actual <= 0:
+                continue
+            prorated = flt(actual * min(days, 22) / 22.0, 2)
+            act = _upsert_deduction_draft(
+                emp, "Basic Salary", prorated, m_end,
+                f"New Hire Proration - {month_label}: joined "
+                f"{frappe.db.get_value('Employee', emp, 'date_of_joining')}, "
+                f"{days}/22 days x actual basic {flt(actual, 2)}",
+                overwrite=1)
+            if act in ("created", "updated"):
+                out["new_hires"] += 1
+            # SSA at FULL basic from the 1st of next month, if none exists
+            has_ssa = frappe.db.exists(
+                "Salary Structure Assignment",
+                {"employee": emp, "docstatus": 1})
+            if not has_ssa:
+                tmpl = _q(
+                    """select salary_structure, income_tax_slab, company,
+                              currency, payroll_payable_account
+                       from `tabSalary Structure Assignment`
+                       where docstatus=1 order by creation desc limit 1""")
+                t = tmpl[0] if tmpl else {}
+                ssa = frappe.get_doc({
+                    "doctype": "Salary Structure Assignment",
+                    "employee": emp,
+                    "salary_structure": t.get("salary_structure")
+                        or "Main Structure - BGL",
+                    "income_tax_slab": t.get("income_tax_slab"),
+                    "company": t.get("company")
+                        or frappe.db.get_value("Employee", emp, "company"),
+                    "currency": t.get("currency") or "GHS",
+                    "payroll_payable_account": t.get("payroll_payable_account"),
+                    "from_date": nxt_start,
+                    "base": actual,
+                })
+                ssa.insert()
+                ssa.submit()
+                out["ssa_created"].append(
+                    f"{frappe.db.get_value('Employee', emp, 'employee_name')}"
+                    f" (base {flt(actual, 2)} from {nxt_start})")
+        except Exception as ex:
+            out["errors"].append(f"New hire {row.get('employee')}: {ex}")
+
+    # ---- Fixed allowances & overtime: carry-forward uploads ----
+    ALLOW_MAP = {"housing": "Housing Allowance", "transport": "Transport Allowance",
+                 "eda": "Extra Duty Allowance", "ota": "Overtime Allowance"}
+    for row in allowances:
+        emp = row.get("employee")
+        desig = frappe.db.get_value("Employee", emp, "designation")
+        for key, comp in ALLOW_MAP.items():
+            if key not in row:
+                continue
+            amt = flt(row.get(key) or 0)
+            if key == "ota" and desig in PAY_GROUPS and                     GROUP_UNIT.get(desig) in ("Trip", "Cubic"):
+                if amt > 0:
+                    out["errors"].append(
+                        f"{emp}: fixed OT blocked - employee earns "
+                        f"{GROUP_UNIT.get(desig)} overtime")
+                continue
+            try:
+                act = _upsert_deduction_draft(
+                    emp, comp, amt, m_end,
+                    f"{comp} {month_label} via payroll prep sheet",
+                    overwrite=1)
+                if act in ("created", "updated"):
+                    out["allowances"] += 1
+            except Exception as ex:
+                out["errors"].append(f"{emp} {comp}: {ex}")
+
     frappe.db.commit()
     out["errors"] = out["errors"][:10]
     return out
@@ -682,3 +820,294 @@ def loan_create(employee, principal, expected_monthly=None,
     frappe.db.commit()
     return {"name": doc.name, "employee_name": info.employee_name,
             "principal": flt(principal)}
+
+
+@frappe.whitelist()
+def unlock_month(site, month):
+    """Reverse a locked trip sheet for correction (HR Manager only).
+
+    Cancels submitted logs and deletes the DRAFT earning entries generated
+    from them. Refuses if any generated entry was already SUBMITTED - money
+    that entered payroll must be handled in payroll first.
+    """
+    _require_access()
+    if "HR Manager" not in frappe.get_roles() and \
+            "System Manager" not in frappe.get_roles():
+        frappe.throw("Only HR Manager can unlock a month",
+                     frappe.PermissionError)
+    m_end = _month_end(month)
+    pulled = _q(
+        """select distinct employee, salary_component
+           from `tabDaily Trip Log`
+           where docstatus=1 and payroll_month=%(m)s and branch=%(s)s
+             and ifnull(pulled_to_payroll,0)=1""",
+        {"m": month, "s": site})
+    blocked = []
+    for p in pulled:
+        if frappe.db.exists("Additional Salary", {
+                "employee": p.employee, "salary_component": p.salary_component,
+                "payroll_date": m_end, "docstatus": 1}):
+            blocked.append(f"{p.employee} / {p.salary_component}")
+    if blocked:
+        frappe.throw(
+            "Cannot unlock: these earnings were already SUBMITTED to payroll: "
+            + ", ".join(blocked[:8])
+            + ". Cancel them under Additional Salary first.")
+    deleted_drafts = 0
+    for p in pulled:
+        name = frappe.db.get_value("Additional Salary", {
+            "employee": p.employee, "salary_component": p.salary_component,
+            "payroll_date": m_end, "docstatus": 0}, "name")
+        if name:
+            frappe.delete_doc("Additional Salary", name)
+            deleted_drafts += 1
+    names = frappe.get_all(
+        "Daily Trip Log",
+        filters={"payroll_month": month, "branch": site, "docstatus": 1},
+        pluck="name")
+    unlocked = 0
+    for n in names:
+        doc = frappe.get_doc("Daily Trip Log", n)
+        doc.db_set("pulled_to_payroll", 0, update_modified=False)
+        doc.cancel()
+        # recreate as editable draft with the same figures
+        newd = frappe.copy_doc(doc)
+        newd.docstatus = 0
+        newd.pulled_to_payroll = 0
+        newd.insert()
+        unlocked += 1
+    frappe.db.commit()
+    return {"unlocked": unlocked, "drafts_deleted": deleted_drafts}
+
+
+@frappe.whitelist()
+def payroll_readiness(month):
+    """Month-by-month pre-payroll checklist for the Command Center."""
+    _require_access()
+    m_end = _month_end(month)
+    lines = []
+
+    def line(key, label, ok, detail, link=None, warn=False):
+        lines.append({"key": key, "label": label, "ok": bool(ok),
+                      "warn": bool(warn), "detail": detail, "link": link})
+
+    # 1. trip sheets locked per site
+    sites = ["Airport", "Tema"]
+    for site in sites:
+        drafts = frappe.db.count("Daily Trip Log", {
+            "payroll_month": month, "branch": site, "docstatus": 0})
+        submitted = frappe.db.count("Daily Trip Log", {
+            "payroll_month": month, "branch": site, "docstatus": 1})
+        ok = drafts == 0 and submitted > 0
+        detail = (f"{submitted} locked" if ok else
+                  (f"{drafts} still in draft" if drafts else "no logs yet"))
+        line(f"sheet_{site.lower()}", f"Trip sheet locked - {site}", ok,
+             detail, "/app/trip-log-sheet", warn=(drafts == 0 and not submitted))
+
+    # 2. earnings generated
+    unpulled = frappe.db.count("Daily Trip Log", {
+        "payroll_month": month, "docstatus": 1, "pulled_to_payroll": 0})
+    gen = _q(
+        """select count(*) c from `tabAdditional Salary`
+           where payroll_date=%(d)s and docstatus < 2
+             and salary_component in ('Trips','Cubic')""", {"d": m_end})[0].c
+    line("earnings", "Trip earnings generated", unpulled == 0 and gen > 0,
+         (f"{gen} entries created" if unpulled == 0 and gen
+          else f"{unpulled} locked log(s) not yet pulled"),
+         "/app/trip-log-sheet")
+
+    # 3. new hires prorated
+    hires = _q(
+        """select name, employee_name from `tabEmployee`
+           where status='Active' and date_of_joining between %(f)s and %(t)s""",
+        {"f": f"{month}-01", "t": m_end})
+    unhandled = [h.employee_name for h in hires if not frappe.db.exists(
+        "Additional Salary", {"employee": h.name, "payroll_date": m_end,
+                              "salary_component": "Basic Salary",
+                              "docstatus": ("<", 2)})]
+    line("hires", "New hires prorated",
+         len(unhandled) == 0,
+         ("no joiners this month" if not hires else
+          (f"all {len(hires)} handled" if not unhandled else
+           f"{len(unhandled)} pending: " + ", ".join(unhandled[:4]))),
+         "/app/deduction-sheet", warn=(not hires))
+
+    # 3b. joining-date sanity: employees created this month, DOJ elsewhere
+    odd = _q(
+        """select employee_name from `tabEmployee`
+           where status='Active' and creation >= %(f)s
+             and (date_of_joining < %(f)s or date_of_joining > %(t)s)""",
+        {"f": f"{month}-01", "t": m_end})
+    if odd:
+        line("doj", "Confirm joining dates", False,
+             "created this month but joining date is outside it: "
+             + ", ".join(o.employee_name for o in odd[:4]),
+             "/app/employee", warn=True)
+
+    # 4. deductions saved
+    ded = _q(
+        """select count(*) c from `tabAdditional Salary`
+           where payroll_date=%(d)s and docstatus < 2
+             and salary_component in ('Loans','Salary Advance','Absent')""",
+        {"d": m_end})[0].c
+    line("deductions", "Deductions saved", ded > 0,
+         (f"{ded} entries" if ded else "prep sheet not saved yet"),
+         "/app/deduction-sheet")
+
+    # 5. allowances carried forward
+    allow = _q(
+        """select count(*) c from `tabAdditional Salary`
+           where payroll_date=%(d)s and docstatus < 2
+             and salary_component in ('Housing Allowance','Transport Allowance',
+                                      'Extra Duty Allowance','Overtime Allowance')""",
+        {"d": m_end})[0].c
+    line("allowances", "Allowances carried forward", allow > 0,
+         (f"{allow} entries" if allow else "not saved yet"),
+         "/app/deduction-sheet")
+
+    # 6. foreign / inactive employee check
+    foreign = _q(
+        """select distinct a.employee, a.employee_name
+           from `tabAdditional Salary` a
+           left join `tabEmployee` e on e.name = a.employee
+           where a.payroll_date=%(d)s and a.docstatus < 2
+             and (e.name is null or e.status != 'Active')""",
+        {"d": m_end})
+    line("foreign", "Everyone on payroll is active staff", len(foreign) == 0,
+         ("clean" if not foreign else
+          "entries exist for: " + ", ".join(
+              (f.employee_name or f.employee) for f in foreign[:4])),
+         "/app/additional-salary")
+
+    # 7. drafts awaiting review
+    pending = frappe.db.count("Additional Salary", {
+        "payroll_date": m_end, "docstatus": 0})
+    line("review", "All drafts reviewed and submitted", pending == 0,
+         (f"{pending} draft(s) awaiting review" if pending else "all submitted"),
+         "/app/additional-salary?docstatus=0")
+
+    ready = all(l["ok"] for l in lines if not l["warn"])
+    from bgl_ops import __version__
+    return {"month": month, "month_end": m_end, "lines": lines,
+            "ready": ready, "app_version": __version__}
+
+
+# ---------------------------------------------------------------------------
+# Review & Approve board
+# ---------------------------------------------------------------------------
+
+REVIEW_GROUPS = {
+    "trip_earnings": {"label": "Trip Earnings", "components": ["Trips", "Cubic"]},
+    "loans": {"label": "Loans", "components": ["Loans"]},
+    "advances": {"label": "Salary Advances", "components": ["Salary Advance"]},
+    "absences": {"label": "Absences", "components": ["Absent"]},
+    "prorations": {"label": "New Hire Prorations", "components": ["Basic Salary"]},
+    "allowances": {"label": "Fixed Allowances & OT",
+                   "components": ["Housing Allowance", "Transport Allowance",
+                                  "Extra Duty Allowance", "Overtime Allowance"]},
+}
+
+
+@frappe.whitelist()
+def review_board(month):
+    """Month's Additional Salary entries grouped by source, with
+    reconciliation against each group's source of truth."""
+    _require_access()
+    m_end = _month_end(month)
+    prev_end = _prev_month_end(month)
+    all_comps = [c for g in REVIEW_GROUPS.values() for c in g["components"]]
+
+    rows = _q(
+        """select name, employee, employee_name, salary_component,
+                  amount, docstatus, remark
+           from `tabAdditional Salary`
+           where payroll_date=%(d)s and docstatus < 2
+             and salary_component in %(comps)s
+           order by salary_component, employee_name""",
+        {"d": m_end, "comps": all_comps})
+
+    groups = {}
+    for key, g in REVIEW_GROUPS.items():
+        rws = [r for r in rows if r.salary_component in g["components"]]
+        groups[key] = {
+            "label": g["label"],
+            "rows": rws,
+            "total": flt(sum(flt(r.amount) for r in rws), 2),
+            "drafts": sum(1 for r in rws if r.docstatus == 0),
+            "submitted": sum(1 for r in rws if r.docstatus == 1),
+        }
+
+    # reconciliation: trip earnings vs locked trip logs
+    trips_src = _q(
+        """select ifnull(sum(amount),0) v from `tabDaily Trip Log`
+           where docstatus=1 and payroll_month=%(m)s
+             and ifnull(pulled_to_payroll,0)=1""", {"m": month})[0].v
+    groups["trip_earnings"]["source"] = flt(trips_src, 2)
+    groups["trip_earnings"]["source_label"] = "locked trip sheets"
+
+    # loans vs ledger repayment rows for this month
+    loans_src = _q(
+        """select ifnull(sum(amount),0) v from `tabStaff Loan Repayment`
+           where reference=%(r)s""", {"r": f"PAYROLL-{month}"})[0].v
+    groups["loans"]["source"] = flt(loans_src, 2)
+    groups["loans"]["source_label"] = "loan ledger repayments"
+
+    # advances + allowances vs last month (informational)
+    for key, comps in (("advances", ["Salary Advance"]),
+                       ("allowances", ["Housing Allowance", "Transport Allowance",
+                                       "Extra Duty Allowance", "Overtime Allowance"])):
+        prev = _q(
+            """select ifnull(sum(amount),0) v from `tabAdditional Salary`
+               where docstatus=1 and payroll_date=%(d)s
+                 and salary_component in %(c)s""",
+            {"d": prev_end, "c": comps})[0].v
+        groups[key]["source"] = flt(prev, 2)
+        groups[key]["source_label"] = "last month (for comparison)"
+        groups[key]["informational"] = 1
+
+    # safety checks
+    foreign = _q(
+        """select distinct a.employee, a.employee_name
+           from `tabAdditional Salary` a
+           left join `tabEmployee` e on e.name=a.employee
+           where a.payroll_date=%(d)s and a.docstatus < 2
+             and (e.name is null or e.status != 'Active')""", {"d": m_end})
+    dups = _q(
+        """select employee, employee_name, salary_component, count(*) c
+           from `tabAdditional Salary`
+           where payroll_date=%(d)s and docstatus < 2
+           group by employee, salary_component having c > 1""", {"d": m_end})
+
+    total_drafts = sum(g["drafts"] for g in groups.values())
+    ready = total_drafts == 0 and not foreign and not dups and \
+        any(g["submitted"] for g in groups.values())
+    from bgl_ops import __version__
+    return {"month": month, "month_end": m_end, "groups": groups,
+            "foreign": foreign, "duplicates": dups,
+            "total_drafts": total_drafts, "ready": ready,
+            "app_version": __version__}
+
+
+@frappe.whitelist()
+def approve_group(month, group):
+    """Submit every DRAFT in one review group (HR Manager only)."""
+    _require_access()
+    if "HR Manager" not in frappe.get_roles() and \
+            "System Manager" not in frappe.get_roles():
+        frappe.throw("Only HR Manager can approve", frappe.PermissionError)
+    g = REVIEW_GROUPS.get(group)
+    if not g:
+        frappe.throw(f"Unknown group {group}")
+    m_end = _month_end(month)
+    names = frappe.get_all("Additional Salary", filters={
+        "payroll_date": m_end, "docstatus": 0,
+        "salary_component": ("in", g["components"])}, pluck="name")
+    done, errors = 0, []
+    for n in names:
+        try:
+            frappe.get_doc("Additional Salary", n).submit()
+            done += 1
+        except Exception as ex:
+            errors.append(f"{n}: {ex}")
+    frappe.db.commit()
+    return {"approved": done, "errors": errors[:8]}

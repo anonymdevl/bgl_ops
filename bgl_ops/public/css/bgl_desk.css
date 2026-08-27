@@ -1,0 +1,9 @@
+/* BGL: splash screen - the logo breathes with a soft Betonsa-red glow while the desk loads */
+.splash img, #splash img {
+	animation: bgl-splash 1.7s ease-in-out infinite;
+	border-radius: 10px;
+}
+@keyframes bgl-splash {
+	0%, 100% { transform: scale(1); opacity: .82; filter: drop-shadow(0 0 0 rgba(241,7,48,0)); }
+	50% { transform: scale(1.06); opacity: 1; filter: drop-shadow(0 0 22px rgba(241,7,48,.35)); }
+}

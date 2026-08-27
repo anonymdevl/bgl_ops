@@ -1,0 +1,15 @@
+{
+ "doctype": "Page",
+ "name": "review-board",
+ "page_name": "review-board",
+ "title": "Review & Approve",
+ "icon": "octicon octicon-checklist",
+ "module": "BGL Ops",
+ "standard": "Yes",
+ "system_page": 0,
+ "roles": [
+  {"role": "HR User"},
+  {"role": "HR Manager"},
+  {"role": "System Manager"}
+ ]
+}

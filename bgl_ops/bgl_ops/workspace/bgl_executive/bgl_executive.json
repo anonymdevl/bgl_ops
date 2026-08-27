@@ -1,0 +1,50 @@
+{
+ "doctype": "Workspace",
+ "name": "BGL Executive",
+ "label": "BGL Executive",
+ "title": "BGL Executive",
+ "module": "BGL Ops",
+ "icon": "star",
+ "public": 1,
+ "is_hidden": 0,
+ "type": "Workspace",
+ "link_type": "DocType",
+ "sequence_id": 98.0,
+ "content": "[{\"id\": \"bgledeck\", \"type\": \"custom_block\", \"data\": {\"custom_block_name\": \"BGL Executive Deck\", \"col\": 12}}, {\"id\": \"scx1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Command Center\", \"col\": 3}}, {\"id\": \"scx2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Trip Costing\", \"col\": 3}}, {\"id\": \"scx3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Loans & Advances\", \"col\": 3}}]",
+ "roles": [
+  {
+   "role": "Command Center Viewer"
+  }
+ ],
+ "custom_blocks": [
+  {
+   "custom_block_name": "BGL Executive Deck",
+   "label": "BGL Executive Deck"
+  }
+ ],
+ "shortcuts": [
+  {
+   "type": "URL",
+   "url": "/command-center",
+   "link_to": "",
+   "label": "Command Center",
+   "color": "Orange"
+  },
+  {
+   "type": "Report",
+   "link_to": "BGL Trip Costing",
+   "label": "Trip Costing",
+   "color": "Blue"
+  },
+  {
+   "type": "DocType",
+   "link_to": "Staff Loan Advance",
+   "label": "Loans & Advances",
+   "color": "Grey"
+  }
+ ],
+ "links": [],
+ "charts": [],
+ "number_cards": [],
+ "quick_lists": []
+}

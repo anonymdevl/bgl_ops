@@ -1,7 +1,7 @@
 frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: 'Monthly Deduction Sheet',
+		title: 'Monthly Payroll Prep Sheet',
 		single_column: true
 	});
 
@@ -69,7 +69,26 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		var d = state.data;
 		var mi = parseInt(state.month.slice(5, 7), 10) - 1;
 		var label = MONTHS[mi] + ' ' + state.month.slice(0, 4);
-		var h = '<h4>1. Loans - ' + label + '</h4>' +
+		var h = '';
+		if ((d.new_hires || []).length) {
+			h += '<h4>A. New Hire Pro-Ration - ' + label + '</h4>' +
+				'<p class="sect-note">Found automatically from each joining date. Type the agreed monthly basic; this month pays basic x days/22 (component stays Basic Salary - the remark carries the New Hire Proration name), and the full basic becomes the Salary Structure Assignment from the 1st of next month.</p>' +
+				'<table class="dds-t" id="dds-hires"><thead><tr>' +
+				'<th class="l">New hire</th><th class="l">Joined</th><th>Days worked</th>' +
+				'<th>Actual monthly basic</th><th>This month pays</th></tr></thead><tbody>';
+			(d.new_hires || []).forEach(function(nh) {
+				var saved = (d.proration_drafts || []).filter(function(x) { return x.employee === nh.name; });
+				var basic = nh.existing_base || '';
+				h += '<tr data-emp="' + nh.name + '"><td class="l">' + nh.employee_name +
+					' <span class="text-muted">' + (nh.designation || '') + '</span></td>' +
+					'<td class="l">' + frappe.datetime.str_to_user(nh.date_of_joining) + '</td>' +
+					'<td><input type="number" min="0" max="22" step="0.5" class="nh-days" value="' + nh.days_suggested + '"></td>' +
+					'<td><input type="number" min="0" step="0.01" class="nh-basic" value="' + basic + '" placeholder="type basic"></td>' +
+					'<td class="nh-pay">' + (saved.length ? fmt(saved[0].amount) + ' (saved)' : '-') + '</td></tr>';
+			});
+			h += '</tbody></table>';
+		}
+		h += '<h4>1. Loans - ' + label + '</h4>' +
 			'<p class="sect-note">Pre-filled with each loan\'s agreed installment, capped at the balance. Set 0 to skip this month.</p>' +
 			'<table class="dds-t" id="dds-loans"><thead><tr>' +
 			'<th class="l">Employee</th><th>Principal</th><th>Repaid</th><th>Balance</th>' +
@@ -125,12 +144,43 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		h += '</tbody></table>' +
 			'<button class="btn btn-xs btn-default dds-add" id="add-abs">+ Add employee</button>';
 
+		h += '<h4>4. Fixed Allowances and Overtime - ' + label + '</h4>' +
+			'<p class="sect-note">Carried forward from last month - edit only what changed. Employees on Trips or Cubic have the fixed OT cell locked (one overtime type per person).</p>' +
+			'<table class="dds-t" id="dds-allow"><thead><tr>' +
+			'<th class="l">Employee</th><th>Housing</th><th>Transport</th><th>Extra Duty</th><th>Fixed OT</th><th>Total</th></tr></thead><tbody>';
+		var amap = {};
+		function arow(emp, nm) { return amap[emp] = amap[emp] || { name: nm, housing: 0, transport: 0, eda: 0, ota: 0 }; }
+		function aset(r, comp, amt) {
+			if (comp === 'Housing Allowance') r.housing = flt(amt);
+			if (comp === 'Transport Allowance') r.transport = flt(amt);
+			if (comp === 'Extra Duty Allowance') r.eda = flt(amt);
+			if (comp === 'Overtime Allowance') r.ota = flt(amt);
+		}
+		(d.prev_allowances || []).forEach(function(a) { aset(arow(a.employee, a.employee_name), a.salary_component, a.amount); });
+		(d.allowance_drafts || []).forEach(function(a) {
+			var e2 = (d.employees || []).filter(function(e) { return e.name === a.employee; });
+			aset(arow(a.employee, e2.length ? e2[0].employee_name : a.employee), a.salary_component, a.amount);
+		});
+		Object.keys(amap).forEach(function(emp) { h += allow_row(emp, amap[emp], (d.ot_locked || {})[emp]); });
+		h += '<tr class="total"><td class="l">TOTAL ALLOWANCES</td><td id="tot-ah"></td><td id="tot-at"></td><td id="tot-ae"></td><td id="tot-ao"></td><td id="tot-aa"></td></tr>';
+		h += '</tbody></table>' +
+			'<button class="btn btn-xs btn-default dds-add" id="add-allow">+ Add employee</button>';
+
 		holder.html(h);
 		holder.find('input').on('input', function() { $(this).addClass('dirty'); totals(); });
 		holder.find('#add-loan').on('click', add_loan);
 		holder.find('#add-adv').on('click', function() { add_person('adv'); });
 		holder.find('#add-abs').on('click', function() { add_person('abs'); });
+		holder.find('#add-allow').on('click', function() { add_person('allow'); });
 		totals();
+	}
+
+	function allow_row(emp, r, locked) {
+		function cell(cls, v) { return '<td><input type="number" min="0" step="0.01" class="' + cls + '" value="' + flt(v, 2) + '"></td>'; }
+		return '<tr data-emp="' + emp + '"><td class="l">' + r.name + '</td>' +
+			cell('al-h', r.housing) + cell('al-t', r.transport) + cell('al-e', r.eda) +
+			(locked ? '<td class="text-muted" style="text-align:center">Trips/Cubic - locked</td>' : cell('al-o', r.ota)) +
+			'<td class="al-tot">-</td></tr>';
 	}
 
 	function adv_row(emp, name, last, val) {
@@ -177,8 +227,9 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		}], function(v) {
 			var emp = v.emp.split(':')[0].trim();
 			var name = v.emp.split(':').slice(1).join(':').trim();
-			var tb = holder.find(kind === 'adv' ? '#dds-adv tbody' : '#dds-abs tbody');
-			var row = kind === 'adv' ? adv_row(emp, name, '-', 0) : abs_row(emp, name, 0);
+			var tb = holder.find(kind === 'adv' ? '#dds-adv tbody' : (kind === 'allow' ? '#dds-allow tbody' : '#dds-abs tbody'));
+			var row = kind === 'adv' ? adv_row(emp, name, '-', 0) :
+				(kind === 'allow' ? allow_row(emp, { name: name, housing: 0, transport: 0, eda: 0, ota: 0 }, (state.data.ot_locked || {})[emp]) : abs_row(emp, name, 0));
 			tb.find('tr.total').before(row);
 			tb.find('tr[data-emp="' + emp + '"] input').addClass('dirty').on('input', function() {
 				$(this).addClass('dirty'); totals();
@@ -212,6 +263,22 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		});
 		holder.find('#tot-abs-days').text(td + ' days');
 		holder.find('#tot-abs').text('GHS ' + fmt(tabs));
+		holder.find('#dds-hires tbody tr[data-emp]').each(function() {
+			var days = flt($(this).find('input.nh-days').val());
+			var basic = flt($(this).find('input.nh-basic').val());
+			$(this).find('td.nh-pay').text(basic > 0 ? fmt(basic * Math.min(days, 22) / 22) : '-');
+		});
+		var th = 0, tt = 0, te = 0, to2 = 0, taa = 0;
+		holder.find('#dds-allow tbody tr[data-emp]').each(function() {
+			var vh = flt($(this).find('input.al-h').val()), vt = flt($(this).find('input.al-t').val());
+			var ve = flt($(this).find('input.al-e').val()), vo = flt($(this).find('input.al-o').val());
+			th += vh; tt += vt; te += ve; to2 += vo;
+			var rt = vh + vt + ve + vo; taa += rt;
+			$(this).find('td.al-tot').text(fmt(rt));
+		});
+		holder.find('#tot-ah').text(fmt(th)); holder.find('#tot-at').text(fmt(tt));
+		holder.find('#tot-ae').text(fmt(te)); holder.find('#tot-ao').text(fmt(to2));
+		holder.find('#tot-aa').text('GHS ' + fmt(taa));
 	}
 
 	function collect() {
@@ -225,7 +292,21 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		holder.find('#dds-abs tbody tr[data-emp]').each(function() {
 			absences.push({ employee: $(this).data('emp'), days: flt($(this).find('input.db-days').val()) });
 		});
-		return { loans: loans, advances: advances, absences: absences };
+		var new_hires = [], allowances = [];
+		holder.find('#dds-hires tbody tr[data-emp]').each(function() {
+			new_hires.push({ employee: $(this).data('emp'),
+				actual_basic: flt($(this).find('input.nh-basic').val()),
+				days: flt($(this).find('input.nh-days').val()) });
+		});
+		holder.find('#dds-allow tbody tr[data-emp]').each(function() {
+			var r = { employee: $(this).data('emp'),
+				housing: flt($(this).find('input.al-h').val()),
+				transport: flt($(this).find('input.al-t').val()),
+				eda: flt($(this).find('input.al-e').val()) };
+			if ($(this).find('input.al-o').length) r.ota = flt($(this).find('input.al-o').val());
+			allowances.push(r);
+		});
+		return { loans: loans, advances: advances, absences: absences, new_hires: new_hires, allowances: allowances };
 	}
 
 	function save_all() {
@@ -237,12 +318,14 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 				frappe.call({
 					method: 'bgl_ops.api.deduction_save',
 					args: { month: state.month, loans: JSON.stringify(c.loans),
-						advances: JSON.stringify(c.advances), absences: JSON.stringify(c.absences) },
+						advances: JSON.stringify(c.advances), absences: JSON.stringify(c.absences),
+						new_hires: JSON.stringify(c.new_hires), allowances: JSON.stringify(c.allowances) },
 					freeze: true, freeze_message: 'Saving deductions...',
 					callback: function(r) {
 						var m = r.message;
-						var msg = 'Saved: ' + m.loans + ' loan deduction(s), ' + m.advances +
-							' advance(s), ' + m.absences + ' absence entr(ies). Next: review + submit the drafts under Additional Salary, then run Payroll Entry.';
+						var msg = 'Saved: ' + m.loans + ' loan(s), ' + m.advances + ' advance(s), ' + m.absences +
+							' absence(s), ' + m.new_hires + ' proration(s), ' + m.allowances + ' allowance(s). Next: review + submit the drafts under Additional Salary, then run Payroll Entry.';
+						if (m.ssa_created && m.ssa_created.length) msg += ' Salary assignments created: ' + m.ssa_created.join('; ') + '.';
 						if (m.cleared.length) msg += ' Loans cleared: ' + m.cleared.join(', ') + '.';
 						frappe.show_alert({ message: msg, indicator: m.errors.length ? 'orange' : 'green' });
 						if (m.errors.length) frappe.msgprint({ title: 'Some rows failed', message: m.errors.join('<br>') });
