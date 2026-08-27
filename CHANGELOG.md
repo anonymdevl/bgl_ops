@@ -2,6 +2,13 @@
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.
 
+## 1.8.2 - 2026-08-27
+- Payroll Guide updated for launch: new section on the Employee Hub and
+  Employee 360, and the fixing-mistakes section now covers removing an
+  added person with the red x. Guide verified against every shipped feature.
+- Dummy data purged from the live site (33 test trip logs + 6 demo loans);
+  the 13 real vehicles kept. August starts clean.
+
 ## 1.8.1 - 2026-08-27
 - Fix: typing in the Employee Hub no longer triggers the desk's global
   search (workspace pages treat any keystroke as search - ours now stay
