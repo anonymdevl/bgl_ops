@@ -2,6 +2,14 @@
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.
 
+## 1.7.5 - 2026-08-27
+- BGL Executive brought to full parity with the Operations cockpit: same
+  five-stone trail (read-only, badge says HAPPENING NOW), numbered/check
+  badges, DONE/OPEN/WAITING labels, breathing active stone, progress line
+  with traveling spark, month chip, machined cards, version footer.
+- Glowing time-of-day icon (sun / dusk / moon) restored on the greeting in
+  all four views, with a gentle pulse.
+
 ## 1.7.4 - 2026-08-27
 - Spacing tune: constellation and date line sit tight together; the breathing
   room starts from the greeting downward.
