@@ -2,6 +2,21 @@
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.
 
+## 1.8.4 - 2026-08-27
+- Fix: readiness stones no longer show DONE for steps that simply have no data
+  yet (post-purge "no logs yet" now shows as OPEN, not complete).
+- Fix: "Review drafts" stone requires at least one payroll entry for the month
+  before it can turn green.
+- Fix: default landing after login - set System Settings default_app so the
+  /apps selector no longer overrides the cockpit workspaces (data fix applied
+  live; documented here).
+
+## 1.8.3 - 2026-08-27
+- Fix: HR could not pick a Leave Type when applying on behalf of employees.
+  A leftover training-time link filter on leave_type excluded Annual Leave
+  (the main allocated type). Filter removed entirely - the field is back to
+  stock ERPNext behavior (allocation-based), live and in fixtures.
+
 ## 1.8.2 - 2026-08-27
 - Payroll Guide updated for launch: new section on the Employee Hub and
   Employee 360, and the fixing-mistakes section now covers removing an

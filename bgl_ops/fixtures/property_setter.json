@@ -140,16 +140,6 @@
  },
  {
   "doctype": "Property Setter",
-  "name": "Leave Application-leave_type-link_filters",
-  "doc_type": "Leave Application",
-  "doctype_or_field": "DocField",
-  "property": "link_filters",
-  "property_type": "JSON",
-  "value": "[[\"Leave Type\",\"leave_type_name\",\"in\",[\"Paid Leave\",\"Maternity Leave\",\"Leave Without Pay\",\"Sick Leave\",\"Compensatory Off\",\"Casual Leave\"]]]",
-  "field_name": "leave_type"
- },
- {
-  "doctype": "Property Setter",
   "name": "Leave Allocation-employee_name-in_list_view",
   "doc_type": "Leave Allocation",
   "doctype_or_field": "DocField",

@@ -982,8 +982,13 @@ def payroll_readiness(month):
     # 7. drafts awaiting review
     pending = frappe.db.count("Additional Salary", {
         "payroll_date": m_end, "docstatus": 0})
-    line("review", "All drafts reviewed and submitted", pending == 0,
-         (f"{pending} draft(s) awaiting review" if pending else "all submitted"),
+    total_entries = frappe.db.count("Additional Salary", {
+        "payroll_date": m_end, "docstatus": ("<", 2)})
+    line("review", "All drafts reviewed and submitted",
+         pending == 0 and total_entries > 0,
+         (f"{pending} draft(s) awaiting review" if pending else
+          ("all submitted" if total_entries else
+           "no payroll entries yet this month")),
          "/app/additional-salary?docstatus=0")
 
     ready = all(l["ok"] for l in lines if not l["warn"])
