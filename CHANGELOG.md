@@ -2,6 +2,17 @@
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.
 
+## 1.7.4 - 2026-08-27
+- Spacing tune: constellation and date line sit tight together; the breathing
+  room starts from the greeting downward.
+
+## 1.7.3 - 2026-08-27
+- Uniformity: all four cockpit views (Operations + Executive, dark + light)
+  now use the proven corner constellation block - fixed size, always renders,
+  star colors follow the theme. No layout-dependent sky anywhere.
+- Breathing room between the date line, greeting, subtitle, verdict, cards
+  and trail on both workspaces.
+
 ## 1.7.2 - 2026-08-27
 - Fix: cockpit and executive constellations were invisible when the block
   rendered before layout settled (canvas measured zero width) - both now
