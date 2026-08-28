@@ -2,6 +2,15 @@
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.
 
+## 1.12.2 - 2026-08-28
+- Critical fix found in pre-run QA: trip earnings arrive under their real
+  components (Mixer Driver Cubic - Tema/Airport, Pump Cubic Incentive,
+  Cubic - Weekday/Weekend, Trips) but the Review board, Approve action,
+  readiness stone and slip reconciliation only matched the literals
+  'Trips'/'Cubic' - mixer and pump cubic money would have bypassed the
+  entire gate. All four now resolve the component list live from the
+  BGL Trip Rate table, so new components join the gate automatically.
+
 ## 1.12.1 - 2026-08-28
 - Payroll creation is now watchable: a live progress rail (green-to-amber
   fill with a traveling light) counts slips as they are written - big X/143

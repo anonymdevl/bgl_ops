@@ -996,8 +996,8 @@ def payroll_readiness(month):
     gen = _q(
         """select count(*) c from `tabAdditional Salary`
            where payroll_date between %(ms)s and %(d)s and docstatus < 2
-             and salary_component in ('Trips','Cubic')""",
-        {"ms": f"{month}-01", "d": m_end})[0].c
+             and salary_component in %(tc)s""",
+        {"ms": f"{month}-01", "d": m_end, "tc": _trip_components()})[0].c
     line("earnings", "Trip earnings generated", unpulled == 0 and gen > 0,
          (f"{gen} entries created" if unpulled == 0 and gen
           else f"{unpulled} locked log(s) not yet pulled"),
@@ -1088,6 +1088,21 @@ def payroll_readiness(month):
 # Review & Approve board
 # ---------------------------------------------------------------------------
 
+def _trip_components():
+    """Every salary component trips/cubic money can arrive under - read from
+    the live rate table so new components join the gate automatically."""
+    rows = _q("""select distinct salary_component from `tabBGL Trip Rate`
+                 where ifnull(salary_component,'') != ''""")
+    comps = {r.salary_component for r in rows} | {"Trips", "Cubic"}
+    return sorted(comps)
+
+
+def _group_components(key):
+    if key == "trip_earnings":
+        return _trip_components()
+    return REVIEW_GROUPS[key]["components"]
+
+
 REVIEW_GROUPS = {
     "trip_earnings": {"label": "Trip Earnings", "components": ["Trips", "Cubic"]},
     "encashments": {"label": "Leave Encashments", "components": ["Leave Encashment"]},
@@ -1108,7 +1123,7 @@ def review_board(month):
     _require_access()
     m_end = _month_end(month)
     prev_end = _prev_month_end(month)
-    all_comps = [c for g in REVIEW_GROUPS.values() for c in g["components"]]
+    all_comps = sorted({c for k in REVIEW_GROUPS for c in _group_components(k)})
 
     rows = _q(
         """select name, employee, employee_name, salary_component,
@@ -1121,7 +1136,7 @@ def review_board(month):
 
     groups = {}
     for key, g in REVIEW_GROUPS.items():
-        rws = [r for r in rows if r.salary_component in g["components"]]
+        rws = [r for r in rows if r.salary_component in _group_components(key)]
         groups[key] = {
             "label": g["label"],
             "rows": rws,
@@ -1205,7 +1220,7 @@ def approve_group(month, group):
     m_end = _month_end(month)
     names = frappe.get_all("Additional Salary", filters={
         "payroll_date": ("between", [f"{month}-01", m_end]), "docstatus": 0,
-        "salary_component": ("in", g["components"])}, pluck="name")
+        "salary_component": ("in", _group_components(group))}, pluck="name")
     done, errors = 0, []
     for n in names:
         try:
@@ -1641,7 +1656,7 @@ def payroll_status(month):
             if not g["rows"]:
                 continue
             slip_total = flt(sum(cmap.get(c, 0)
-                                 for c in REVIEW_GROUPS[key]["components"]), 2)
+                                 for c in _group_components(key)), 2)
             recon.append({"group": g["label"], "board": g["total"],
                           "slips": slip_total,
                           "ok": abs(slip_total - flt(g["total"])) < 0.05})
