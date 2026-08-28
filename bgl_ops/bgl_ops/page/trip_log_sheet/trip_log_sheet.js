@@ -40,6 +40,14 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 		.tls th,.tls td{border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);padding:0;background:var(--fg-color)}\
 		.tls thead th{position:sticky;top:0;z-index:3;background:var(--subtle-fg);padding:6px;text-align:center;font-size:11px}\
 		.tls thead th.sat{color:var(--orange-500)} .tls thead th.sun{color:var(--red-500)}\
+		.tls td.satcol{background:var(--yellow-50,#fff8e6)}\
+		.tls td.suncol{background:var(--red-50,#fdefee)}\
+		.tls td.satcol input.q:focus{background:var(--yellow-100)}\
+		.tls td.nrm,.tls td.satm{text-align:right;padding:6px 8px;font-weight:600;min-width:78px}\
+		.tls td.satm{color:var(--orange-500)}\
+		.tls td.sq{text-align:center;padding:6px 8px;color:var(--orange-500);font-weight:600}\
+		.tls thead th.moneyhd{color:var(--blue-500)}\
+		.tls thead th.sathd{color:var(--orange-500)}\
 		.tls td.emp,.tls th.emp{position:sticky;left:0;z-index:2;min-width:210px;padding:6px 10px;font-weight:600;white-space:nowrap}\
 		.tls thead th.emp{z-index:4;text-align:left}\
 		.tls td.trk,.tls th.trk{position:sticky;left:210px;z-index:2;min-width:86px}\
@@ -53,6 +61,10 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 		.tls input.trkin{width:78px;border:none;background:transparent;padding:6px;outline:none;color:var(--blue-500)}\
 		.tls td.tot{font-weight:700;text-align:center;padding:6px 8px;color:var(--orange-500)}\
 		.tls td.amt{font-weight:700;text-align:right;padding:6px 8px;color:var(--blue-500);min-width:82px}\
+		.tls tfoot td{position:sticky;bottom:0;z-index:3;background:var(--subtle-fg);font-weight:700;\
+			text-align:center;padding:6px 4px;border-top:2px solid var(--border-color)}\
+		.tls tfoot td.emp{left:0;z-index:5;text-align:left}\
+		.tls tfoot td.trk{left:210px;z-index:5}\
 	</style>').appendTo(body);
 	var msg = $('<div class="text-muted" style="margin:8px 0">Pick a site and month, then Load Sheet. Saturdays amber, Sundays red, green cells locked.</div>').appendTo(body);
 	var holder = $('<div class="tls-scroll"></div>').appendTo(body);
@@ -72,13 +84,53 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 		return best ? best.rate : 0;
 	}
 
+	function day_totals() {
+		var d = state.sheet;
+		if (!d) return;
+		var gq = 0, ga = 0;
+		for (var day = 1; day <= d.days; day++) {
+			var c = 0;
+			holder.find('input.q[data-day="' + day + '"]').each(function() {
+				c += parseFloat($(this).val()) || 0;
+			});
+			gq += c;
+			holder.find('td.dtot[data-day="' + day + '"]').text(c || '');
+		}
+		var gsq = 0, gn = 0, gs = 0;
+		function cell_val(tr, sel) {
+			return flt((tr.find(sel).text() || '0').replace(/,/g, ''));
+		}
+		holder.find('tbody tr[data-desig]').each(function() {
+			var tr = $(this);
+			ga += cell_val(tr, 'td.amt');
+			gsq += cell_val(tr, 'td.sq');
+			gn += cell_val(tr, 'td.nrm');
+			gs += cell_val(tr, 'td.satm');
+		});
+		holder.find('td.gtot-q').text(gq || '');
+		holder.find('td.gtot-sq').text(gsq || '');
+		holder.find('td.gtot-n').text(gn ? format_number(gn, null, 2) : '');
+		holder.find('td.gtot-s').text(gs ? format_number(gs, null, 2) : '');
+		holder.find('td.gtot-a').text(ga ? format_number(ga, null, 2) : '');
+	}
+
+	function is_sat(day) {
+		var d = state.sheet;
+		return !!(d && (d.saturdays || []).indexOf(day) >= 0);
+	}
+
+	// Their sheets reconcile on NORMAL / SAT / T.AMOUNT, so ours does too.
 	function row_totals(emp, desig) {
-		var q = 0, a = 0;
+		var q = 0, sq = 0, na = 0, sa = 0;
 		holder.find('input.q[data-emp="' + emp + '"]').each(function() {
 			var v = parseFloat($(this).val()) || 0;
-			if (v) { q += v; a += v * rate_for(desig, parseInt($(this).data('day'), 10)); }
+			if (!v) return;
+			var day = parseInt($(this).data('day'), 10);
+			var money = v * rate_for(desig, day);
+			q += v;
+			if (is_sat(day)) { sq += v; sa += money; } else { na += money; }
 		});
-		return { q: q, a: a };
+		return { q: q, sq: sq, na: na, sa: sa, a: na + sa };
 	}
 
 	function load_sheet() {
@@ -100,12 +152,14 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 		var sat = {}, sun = {};
 		(d.saturdays || []).forEach(function(x) { sat[x] = 1; });
 		(d.sundays || []).forEach(function(x) { sun[x] = 1; });
-		var span = d.days + 4;
+		var span = d.days + 7;
 		var h = '<table class="tls"><thead><tr><th class="emp">Driver / Operator</th><th class="trk">Vehicle</th>';
 		for (var i = 1; i <= d.days; i++) {
 			h += '<th class="' + (sat[i] ? 'sat' : (sun[i] ? 'sun' : '')) + '">' + i + '</th>';
 		}
-		h += '<th>Qty</th><th>Amount</th></tr></thead><tbody>';
+		h += '<th>Qty</th><th class="sathd">Sat qty</th>' +
+			'<th class="moneyhd">Normal</th><th class="sathd">Saturday</th>' +
+			'<th class="moneyhd">Total</th></tr></thead><tbody>';
 		var last_group = null;
 		d.employees.forEach(function(e) {
 			if (e.designation !== last_group) {
@@ -113,24 +167,43 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 				h += '<tr class="band"><td colspan="' + span + '">' +
 					frappe.utils.escape_html(last_group) + 's</td></tr>';
 			}
-			var row = (d.grid || {})[e.name] || {}, tot = 0, amt = 0;
+			var row = (d.grid || {})[e.name] || {}, tot = 0, amt = 0,
+				satq = 0, nrm = 0, satm = 0;
 			h += '<tr data-desig="' + frappe.utils.escape_html(e.designation) + '">' +
 				'<td class="emp">' + frappe.utils.escape_html(e.employee_name) + '</td>';
 			h += '<td class="trk"><input class="trkin" data-emp="' + e.name + '" value="' +
 				frappe.utils.escape_html(e.truck_no || '') + '" placeholder="-"></td>';
 			for (var day = 1; day <= d.days; day++) {
 				var cell = row[String(day)];
-				if (cell) { tot += cell.qty; amt += cell.amt || 0; }
-				h += '<td><input class="q" data-emp="' + e.name + '" data-day="' + day +
+				if (cell) {
+					tot += cell.qty; amt += cell.amt || 0;
+					if (sat[day]) { satq += cell.qty; satm += cell.amt || 0; }
+					else { nrm += cell.amt || 0; }
+				}
+				h += '<td class="' + (sat[day] ? 'satcol' : (sun[day] ? 'suncol' : '')) +
+					'"><input class="q" data-emp="' + e.name + '" data-day="' + day +
 					'" value="' + (cell ? cell.qty : '') + '"' +
 					(cell && cell.submitted ? ' disabled title="Submitted - locked"' : '') + '></td>';
 			}
 			h += '<td class="tot" data-totfor="' + e.name + '">' + (tot || '') + '</td>' +
+				'<td class="sq" data-sqfor="' + e.name + '">' + (satq || '') + '</td>' +
+				'<td class="nrm" data-nrmfor="' + e.name + '">' + (nrm ? format_number(nrm, null, 2) : '') + '</td>' +
+				'<td class="satm" data-satmfor="' + e.name + '">' + (satm ? format_number(satm, null, 2) : '') + '</td>' +
 				'<td class="amt" data-amtfor="' + e.name + '">' +
 				(amt ? format_number(amt, null, 2) : '') + '</td></tr>';
 		});
-		h += '</tbody></table>';
+		h += '</tbody>';
+		// per-day column totals: the fastest way to spot a day keyed twice
+		h += '<tfoot><tr><td class="emp">DAY TOTALS</td><td class="trk"></td>';
+		for (var dd = 1; dd <= d.days; dd++) {
+			h += '<td class="dtot ' + (sat[dd] ? 'satcol' : (sun[dd] ? 'suncol' : '')) +
+				'" data-day="' + dd + '"></td>';
+		}
+		h += '<td class="gtot-q"></td><td class="gtot-sq"></td>' +
+			'<td class="gtot-n"></td><td class="gtot-s"></td><td class="gtot-a"></td></tr></tfoot>';
+		h += '</table>';
 		holder.html(h);
+		day_totals();
 
 		holder.off('input').on('input', 'input.q', function() {
 			var t = $(this);
@@ -138,9 +211,13 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 			state.dirty[t.data('emp') + '|' + t.data('day')] =
 				{ employee: t.data('emp'), day: t.data('day'), qty: t.val() };
 			var desig = t.closest('tr').data('desig');
-			var rt = row_totals(t.data('emp'), desig);
-			holder.find('[data-totfor="' + t.data('emp') + '"]').text(rt.q || '');
-			holder.find('[data-amtfor="' + t.data('emp') + '"]').text(rt.a ? format_number(rt.a, null, 2) : '');
+			var rt = row_totals(t.data('emp'), desig), emp = t.data('emp');
+			holder.find('[data-totfor="' + emp + '"]').text(rt.q || '');
+			holder.find('[data-sqfor="' + emp + '"]').text(rt.sq || '');
+			holder.find('[data-nrmfor="' + emp + '"]').text(rt.na ? format_number(rt.na, null, 2) : '');
+			holder.find('[data-satmfor="' + emp + '"]').text(rt.sa ? format_number(rt.sa, null, 2) : '');
+			holder.find('[data-amtfor="' + emp + '"]').text(rt.a ? format_number(rt.a, null, 2) : '');
+			day_totals();
 		}).on('input', 'input.trkin', function() {
 			state.trucks[$(this).data('emp')] = $(this).val();
 		});
@@ -207,6 +284,7 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 			'td.nm{text-align:left;white-space:nowrap;font-weight:bold}' +
 			'td.tot{font-weight:bold;background:#f4f4f4}' +
 			'tr.band td{text-align:left;font-weight:bold;background:#e0e0e0;letter-spacing:.05em}' +
+			'th.satx,td.satx{background:#f2f2f2}' + 'th.sunx{background:#e8e8e8}' +
 			'.sig{margin-top:16px;font-size:10px;display:flex;justify-content:space-between}' +
 			'.sig span{border-top:1px solid #000;padding-top:3px;width:30%;text-align:center}' +
 			'</style></head><body>' +
@@ -218,30 +296,49 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 			'<td style="border:none;width:210px;text-align:right;font-size:8px">Printed: ' + new Date().toLocaleString() + '</td>' +
 			'</tr></table>' +
 			'<table><thead><tr><th style="text-align:left">NAME</th><th>VEHICLE</th>';
-		for (var i = 1; i <= d.days; i++) { h += '<th>' + i + (sat[i] ? '<br>S' : (sun[i] ? '<br>Su' : '')) + '</th>'; }
-		h += '<th>TOTAL<br>QTY</th><th>TOTAL<br>AMOUNT</th></tr></thead><tbody>';
-		var grand = 0, grand_amt = 0, last_group = null;
+		for (var i = 1; i <= d.days; i++) { h += '<th' + (sat[i] ? ' class="satx"' : (sun[i] ? ' class="sunx"' : '')) + '>' + i + (sat[i] ? '<br>S' : (sun[i] ? '<br>Su' : '')) + '</th>'; }
+		h += '<th>TIPS TO<br>SITE</th><th>NORMAL</th><th>SAT</th><th>T.AMOUNT</th></tr></thead><tbody>';
+		var grand = 0, grand_amt = 0, grand_n = 0, grand_s = 0, grand_sq = 0, last_group = null;
 		d.employees.forEach(function(e) {
-			var vals = [], tot = 0, amt = 0;
+			var vals = [], tot = 0, amt = 0, rn = 0, rs = 0, rsq = 0;
 			for (var day = 1; day <= d.days; day++) {
 				var v = parseFloat(holder.find('input.q[data-emp="' + e.name + '"][data-day="' + day + '"]').val()) || 0;
 				vals.push(v); tot += v;
-				if (v) amt += v * rate_for(e.designation, day);
+				if (v) {
+					var mm = v * rate_for(e.designation, day);
+					amt += mm;
+					if (sat[day]) { rs += mm; rsq += v; } else { rn += mm; }
+				}
 			}
 			if (!tot) return;   // only employees with data
 			if (e.designation !== last_group) {
 				last_group = e.designation;
-				h += '<tr class="band"><td colspan="' + (d.days + 4) + '">' + last_group.toUpperCase() + 'S</td></tr>';
+				h += '<tr class="band"><td colspan="' + (d.days + 6) + '">' + last_group.toUpperCase() + 'S</td></tr>';
 			}
 			h += '<tr><td class="nm">' + e.employee_name + '</td>';
 			var trk = holder.find('input.trkin[data-emp="' + e.name + '"]').val();
 			h += '<td>' + (trk || e.truck_no || '') + '</td>';
-			vals.forEach(function(v) { h += '<td>' + (v || '-') + '</td>'; });
-			grand += tot; grand_amt += amt;
-			h += '<td class="tot">' + tot + '</td><td class="tot">' + amt.toFixed(2) + '</td></tr>';
+			vals.forEach(function(v, vi) {
+				h += '<td' + (sat[vi + 1] ? ' class="satx"' : '') + '>' + (v || '-') + '</td>';
+			});
+			grand += tot; grand_amt += amt; grand_n += rn; grand_s += rs; grand_sq += rsq;
+			h += '<td class="tot">' + tot + '</td><td class="tot">' + rn.toFixed(2) + '</td>' +
+				'<td class="tot">' + rs.toFixed(2) + '</td><td class="tot">' + amt.toFixed(2) + '</td></tr>';
 		});
+		var dayrow = '<tr><td class="tot" style="text-align:left">DAY TOTALS</td><td class="tot"></td>';
+		for (var dz = 1; dz <= d.days; dz++) {
+			var cz = 0;
+			holder.find('input.q[data-day="' + dz + '"]').each(function() { cz += parseFloat($(this).val()) || 0; });
+			dayrow += '<td class="tot' + (sat[dz] ? ' satx' : '') + '">' + (cz || '-') + '</td>';
+		}
+		dayrow += '<td class="tot"></td><td class="tot"></td><td class="tot"></td><td class="tot"></td></tr>';
+		h += dayrow;
 		h += '<tr><td class="tot" style="text-align:right" colspan="' + (d.days + 2) + '">GRAND TOTAL</td>' +
-			'<td class="tot">' + grand + '</td><td class="tot">' + grand_amt.toFixed(2) + '</td></tr>';
+			'<td class="tot">' + grand + '</td><td class="tot">' + grand_n.toFixed(2) + '</td>' +
+			'<td class="tot">' + grand_s.toFixed(2) + '</td><td class="tot">' + grand_amt.toFixed(2) + '</td></tr>';
+		h += '<tr><td class="tot" style="text-align:right" colspan="' + (d.days + 2) + '">of which Saturday</td>' +
+			'<td class="tot">' + grand_sq + '</td><td class="tot">-</td>' +
+			'<td class="tot">' + grand_s.toFixed(2) + '</td><td class="tot">-</td></tr>';
 		h += '</tbody></table>' +
 			'<div class="sig"><span>PREPARED BY</span><span>CHECKED BY (HR)</span><span>APPROVED BY MANAGING DIRECTOR</span></div>' +
 			'</body></html>';

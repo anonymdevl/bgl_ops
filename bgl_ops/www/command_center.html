@@ -842,15 +842,23 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
         '<div class="li"><span class="sw" style="background:var(--teal)"></span>Loans <b>'+fmt(loanAmt)+'</b></div>'+
         '<div class="li" style="color:var(--faint);font-size:12px">'+advStaff+' vs '+loanStaff+' staff</div>';
       if((d.active_loans||[]).length){
+        var ltc=0,ltp=0,ltr=0,ltb=0;
         el('l-types').innerHTML=d.active_loans.map(function(r){
+          ltc+=(r.cnt||0); ltp+=(r.principal||0); ltr+=(r.repaid||0); ltb+=(r.balance||0);
           return '<tr><td>'+esc(r.loan_type)+'</td><td class="r">'+r.cnt+'</td><td class="r">'+fmt(r.principal)+'</td>'+
-                 '<td class="r">'+fmt(r.repaid)+'</td><td class="r"><b>'+fmt(r.balance)+'</b></td></tr>'; }).join('');
+                 '<td class="r">'+fmt(r.repaid)+'</td><td class="r"><b>'+fmt(r.balance)+'</b></td></tr>'; }).join('')+
+          '<tr><td><b>TOTAL</b></td><td class="r"><b>'+ltc+'</b></td><td class="r"><b>'+fmt(ltp)+'</b></td>'+
+          '<td class="r"><b>'+fmt(ltr)+'</b></td><td class="r"><b>'+fmt(ltb)+'</b></td></tr>';
       }
       if((d.loan_rows||[]).length){
+        var lrp=0,lrr=0,lrb=0;
         el('l-rows').innerHTML=d.loan_rows.map(function(r){
+          lrp+=(r.principal||0); lrr+=(r.total_repaid||0); lrb+=(r.balance||0);
           var tag=r.status==='Fully Paid'? '<span class="tag t-paid">Paid</span>' : '<span class="tag t-act">Active</span>';
           return '<tr><td>'+esc(r.employee_name)+'</td><td>'+esc(r.loan_type)+'</td><td class="r">'+fmt(r.principal)+'</td>'+
-                 '<td class="r">'+fmt(r.total_repaid)+'</td><td class="r"><b>'+fmt(r.balance)+'</b></td><td>'+tag+'</td></tr>'; }).join('');
+                 '<td class="r">'+fmt(r.total_repaid)+'</td><td class="r"><b>'+fmt(r.balance)+'</b></td><td>'+tag+'</td></tr>'; }).join('')+
+          '<tr><td><b>TOTAL</b></td><td><b>'+d.loan_rows.length+' shown</b></td><td class="r"><b>'+fmt(lrp)+'</b></td>'+
+          '<td class="r"><b>'+fmt(lrr)+'</b></td><td class="r"><b>'+fmt(lrb)+'</b></td><td></td></tr>';
       }
 
       // leave tab
@@ -866,9 +874,14 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
         '<div class="bar"><span class="nm">Remaining</span><span class="t"><span class="f" style="width:'+Math.min(100,Math.round(Math.max(0,ent-d.leave.taken)/ent*100))+'%;background:linear-gradient(90deg,var(--good),#79dcab)"></span></span><span class="v">'+fmt(Math.max(0,ent-d.leave.taken))+'</span></div>';
       if((d.encash||[]).length){
         var ENCC={'Paid':'var(--good,#2fb56f)','Rejected':'var(--bad,#e8776b)','Approved':'var(--teal,#3fc1cb)'};
+        var ecc=0,ecd=0,eca=0;
         el('encbody').innerHTML=d.encash.map(function(r){
+          // Rejected never counts towards what the company owes
+          if(r.status!=='Rejected'){ ecc+=(r.cnt||0); ecd+=(r.days||0); eca+=(r.amt||0); }
           return '<tr><td style="color:'+(ENCC[r.status]||'var(--amber,#f0a04b)')+';font-weight:700">'+esc(r.status)+'</td>'+
-            '<td class="r">'+r.cnt+'</td><td class="r">'+fmt(r.days)+'</td><td class="r">'+fmt(r.amt)+'</td></tr>'; }).join('');
+            '<td class="r">'+r.cnt+'</td><td class="r">'+fmt(r.days)+'</td><td class="r">'+fmt(r.amt)+'</td></tr>'; }).join('')+
+          '<tr><td><b>TOTAL excl. Rejected</b></td><td class="r"><b>'+ecc+'</b></td>'+
+          '<td class="r"><b>'+fmt(ecd)+'</b></td><td class="r"><b>'+fmt(eca)+'</b></td></tr>';
       }
     });
     api('whos_out', {site:PERIOD.site}, function(w){
@@ -1100,22 +1113,26 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
     for(var i=1;i<=d.days;i++){
       h+='<th class="'+(sat[i]?'sat':(sun[i]?'sun':''))+'">'+i+(sat[i]?'<br>S':(sun[i]?'<br>Su':''))+'</th>';
     }
-    h+='<th style="min-width:56px">Total</th></tr></thead><tbody>';
+    h+='<th style="min-width:56px">Total</th><th style="min-width:56px;color:var(--amber,#f0a04b)">Sat</th></tr></thead><tbody>';
     d.employees.forEach(function(e){
       var row=(d.grid||{})[e.name]||{};
       h+='<tr><td class="emp">'+esc(e.employee_name)+'<div class="grp">'+esc(e.designation)+'</div></td>';
       h+='<td class="trk"><input class="trkin" data-emp="'+esc(e.name)+'" value="'+esc(e.truck_no||'')+'" placeholder="-"></td>';
-      var tot=0;
+      var tot=0, stot=0;
       for(var day=1;day<=d.days;day++){
         var cell=row[String(day)];
         var qty=cell? cell.qty : '';
-        if(cell) tot+=cell.qty;
+        if(cell){ tot+=cell.qty; if(sat[day]) stot+=cell.qty; }
         var locked=cell && cell.submitted;
-        h+='<td style="'+(sun[day]?'background:rgba(232,117,107,.05)':'')+'">'+
+        // weekends are paid at a different rate, so they get their own tint
+        var bg = sat[day] ? 'background:rgba(240,160,75,.10)'
+               : (sun[day] ? 'background:rgba(232,117,107,.05)' : '');
+        h+='<td data-day="'+day+'" style="'+bg+'">'+
            '<input class="q" data-emp="'+esc(e.name)+'" data-day="'+day+'" value="'+(qty||'')+'"'+
            (locked? ' disabled title="Submitted - locked"' : '')+'></td>';
       }
-      h+='<td class="tot" data-totfor="'+esc(e.name)+'">'+(tot||'')+'</td></tr>';
+      h+='<td class="tot" data-totfor="'+esc(e.name)+'">'+(tot||'')+'</td>'+
+         '<td class="tot" data-sattot="'+esc(e.name)+'" style="color:var(--amber,#f0a04b)">'+(stot||'')+'</td></tr>';
     });
     h+='</tbody>';
     el('sheet').innerHTML=h;
@@ -1125,9 +1142,14 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
       if(t.classList.contains('q')){
         t.classList.add('dirty');
         DIRTY[t.dataset.emp+'|'+t.dataset.day]={employee:t.dataset.emp, day:t.dataset.day, qty:t.value};
-        var tot=0;
-        el('sheet').querySelectorAll('input.q[data-emp="'+t.dataset.emp+'"]').forEach(function(i){ tot+=parseFloat(i.value)||0; });
+        var tot=0, stot=0, SAT={};
+        (SHEET&&SHEET.saturdays||[]).forEach(function(x){ SAT[x]=1; });
+        el('sheet').querySelectorAll('input.q[data-emp="'+t.dataset.emp+'"]').forEach(function(i){
+          var v=parseFloat(i.value)||0; tot+=v; if(SAT[parseInt(i.dataset.day,10)]) stot+=v;
+        });
         el('sheet').querySelector('[data-totfor="'+t.dataset.emp+'"]').textContent = tot||'';
+        var sc=el('sheet').querySelector('[data-sattot="'+t.dataset.emp+'"]');
+        if(sc) sc.textContent = stot||'';
         markDirty();
       }
       if(t.classList.contains('trkin')){ TRUCKS[t.dataset.emp]=t.value; markDirty(); }

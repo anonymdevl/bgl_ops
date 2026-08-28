@@ -55,6 +55,13 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 		.rvb-donepulse{animation:rvbpop .5s ease}\
 		@keyframes rvbpop{0%{transform:scale(.96);opacity:.4}100%{transform:scale(1);opacity:1}}\
 		.rvb-names{font-size:11.5px;color:var(--text-muted);min-height:16px;margin-top:2px}\
+		.rvb-t tr.rvb-tot td{font-weight:700;background:var(--subtle-fg);border-top:2px solid var(--border-color)}\
+		.rvb-sum{margin:0 0 16px;width:100%}\
+		.rvb-sum th{background:var(--subtle-fg);font-size:11px;text-transform:uppercase;letter-spacing:.04em}\
+		.rvb-sum td,.rvb-sum th{border-bottom:1px solid var(--border-color);padding:6px 10px;text-align:right}\
+		.rvb-sum td.l,.rvb-sum th.l{text-align:left}\
+		.rvb-sum tr.grand td{font-weight:700;background:var(--subtle-fg);border-top:2px solid var(--border-color)}\
+		.rvb-sum tr.net td{font-weight:700;color:var(--blue-500)}\
 	</style>').appendTo(body);
 	var holder = $('<div></div>').appendTo(body);
 	holder.html('<p class="text-muted" style="padding:14px">Pick a month and Load.</p>');
@@ -79,6 +86,33 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 		if ((d.duplicates || []).length)
 			h += '<div class="rvb-warn"><b>Duplicates found:</b> ' +
 				d.duplicates.map(function(x) { return x.employee_name + ' / ' + x.salary_component + ' (x' + x.c + ')'; }).join(', ') + '</div>';
+
+		// ---- month summary: what adds to pay, what comes off, and the net.
+		// Groups are not all the same sign, so a single grand total would be
+		// meaningless - earnings and deductions are kept apart deliberately.
+		var DEDUCT = { loans: 1, advances: 1, absences: 1 };
+		var sum_earn = 0, sum_ded = 0, sum_rows = 0, srows = '';
+		Object.keys(d.groups).forEach(function(key) {
+			var g = d.groups[key];
+			if (!g.rows.length && !g.source) return;
+			var isd = DEDUCT[key];
+			if (isd) sum_ded += flt(g.total); else sum_earn += flt(g.total);
+			sum_rows += g.rows.length;
+			srows += '<tr><td class="l">' + g.label + '</td><td>' + g.rows.length + '</td>' +
+				'<td>' + (isd ? '-' : fmt(g.total)) + '</td>' +
+				'<td>' + (isd ? fmt(g.total) : '-') + '</td>' +
+				'<td class="l">' + (g.drafts ? g.drafts + ' draft(s)' : 'all submitted') + '</td></tr>';
+		});
+		if (srows) {
+			h += '<table class="rvb-sum"><tr><th class="l">Group</th><th>Entries</th>' +
+				'<th>Adds to pay</th><th>Comes off pay</th><th class="l">Status</th></tr>' +
+				srows +
+				'<tr class="grand"><td class="l">TOTAL</td><td>' + sum_rows + '</td>' +
+				'<td>' + fmt(sum_earn) + '</td><td>' + fmt(sum_ded) + '</td><td></td></tr>' +
+				'<tr class="net"><td class="l" colspan="2">NET EFFECT ON PAYROLL</td>' +
+				'<td colspan="2">GHS ' + fmt(sum_earn - sum_ded) + '</td><td></td></tr>' +
+				'</table>';
+		}
 
 		Object.keys(d.groups).forEach(function(key) {
 			var g = d.groups[key];
@@ -105,7 +139,12 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 					return '<tr><td class="l"><a href="/app/additional-salary/' + r.name + '">' + r.employee_name + '</a></td>' +
 						'<td class="l">' + r.salary_component + '</td><td>' + fmt(r.amount) + '</td>' +
 						'<td class="l">' + (r.docstatus ? '<span style="color:var(--green-600)">Submitted</span>' : 'Draft') + '</td></tr>';
-				}).join('') + '</table>' +
+				}).join('') +
+				'<tr class="rvb-tot"><td class="l">TOTAL - ' + g.label + '</td>' +
+				'<td class="l">' + g.rows.length + ' entr(ies)</td>' +
+				'<td>' + fmt(g.total) + '</td>' +
+				'<td class="l">' + (g.drafts ? g.drafts + ' draft(s)' : 'all submitted') + '</td></tr>' +
+				'</table>' +
 				(g.drafts ? '<button class="btn btn-sm btn-primary rvb-approve" data-g="' + key + '" style="margin-top:10px">Approve ' + g.drafts + ' draft(s)</button>' : '') +
 				'</div></div>';
 		});
@@ -213,15 +252,22 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 				frappe.show_alert({ message: 'Payroll submitted. ' + st.submitted + ' people are getting paid.', indicator: 'green' }, 8);
 			}
 			box.find('#rvb-run').on('click', function() {
-				frappe.confirm('Create the ' + state.month + ' Payroll Entry now? Settings copy from last month; every salary slip is created as a DRAFT for the final check.', function() {
-					frappe.call({ method: 'bgl_ops.api.run_payroll', args: { month: state.month }, freeze: true,
+				function go(confirmed) {
+					frappe.call({ method: 'bgl_ops.api.run_payroll',
+						args: { month: state.month, confirm: confirmed ? 1 : 0 }, freeze: true,
 						freeze_message: 'Creating payroll...',
 						callback: function(rr) {
 							var m = rr.message || {};
+							// opening a NEW payroll month asks a second time, by itself
+							if (m.needs_confirmation) {
+								frappe.confirm(m.message, function() { go(1); });
+								return;
+							}
 							if ((m.excluded || []).length) frappe.msgprint({ title: 'Excluded from payroll', message: m.excluded.join('<br>') });
 							render_payzone();
 						} });
-				});
+				}
+				frappe.confirm('Create the ' + state.month + ' Payroll Entry now? Settings copy from last month; every salary slip is created as a DRAFT for the final check.', function() { go(0); });
 			});
 			box.find('#rvb-submit').on('click', function() {
 				var clean = !(st.anomalies || []).length && st.recon_ok;

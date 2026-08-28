@@ -1,3 +1,98 @@
+## v1.15.0
+
+Weekends are visible everywhere, because they are paid differently.
+
+- Trip Log Sheet now carries Qty, Sat qty, Normal, Saturday and Total per
+  person, matching the NORMAL / SAT / T.AMOUNT columns both sites already
+  reconcile against. Saturday columns are tinted down the whole grid, Sundays
+  faintly red, and the DAY TOTALS row keeps the same tint.
+- The printed trip sheet uses their own column names - TIPS TO SITE, NORMAL,
+  SAT, T.AMOUNT - with a grand total and an "of which Saturday" line, so a
+  printout can be laid beside theirs and read straight across.
+- Command Center trip grid: Saturdays now tinted like Sundays were, plus a
+  Sat column beside the total.
+
+Context: Saturday is a different rate from a weekday for most groups at both
+sites, and the two sites do not agree with each other. Airport pays 1.00 a
+cubic on Saturday against 0.70 on a weekday; Tema pays 0.70 flat. Showing one
+Amount hid all of that.
+
+Pre-deploy QA fixes folded into 1.15.0:
+- Both workspace cockpits build their five stones from named readiness keys.
+  The new "basics" line was not in their list, so overall readiness could sit
+  red while every stone showed green, with nothing on screen explaining why.
+  Added to the Payroll Prep Sheet stone in both.
+- BGL Payroll Signoff had naming_rule "Expression" against autoname "hash".
+  Corrected to "Random", matching BGL Trip Rate, so migrate cannot reject it.
+- _signoffs returns empty if its table does not exist yet, so a part-finished
+  migrate cannot take the cockpit down. Unsigned means blocked, never allowed.
+- The Basic Salaries snapshot selected a bare column beside GROUP BY, which is
+  rejected under ONLY_FULL_GROUP_BY. Now max(a.base).
+- _section_snapshot is cached per request; readiness asked for the same
+  sections several times on every workspace load.
+- Printed trip sheet grew two money columns but its group band row still
+  spanned the old width.
+
+## v1.14.0
+
+Prep Sheet sign-off, and the tab fixes.
+
+- New DocType BGL Payroll Signoff. One record per payroll month per section,
+  holding who reviewed it, when, and the entry count and money total at that
+  moment. If those numbers move afterwards the sign-off goes stale by itself
+  and the section turns red again.
+- Readiness no longer guesses whether Allowances and Basic Salaries were done.
+  Row counts cannot tell "reviewed and correctly unchanged" from "never
+  touched" - fixed allowances and untouched basics look identical either way.
+  Both are now explicit sign-off lines, and Basic Salaries has its own line
+  for the first time.
+- run_payroll refuses while either section is unsigned, naming them.
+- Every tab pill now carries a count. Advances, Absences and Allowances had
+  none.
+- Every tab now has the same filter box, not just Basic Salaries. Total rows
+  stay visible while filtering.
+- Save Deductions renamed Save Prep Sheet. The sheet stopped being only about
+  deductions several versions ago.
+
+## v1.13.2
+
+Totals on every number column that gets reconciled.
+
+- Review and Approve: a month summary above the groups showing each group's
+  entries, what adds to pay, what comes off pay, and the net effect. Earnings
+  and deductions are kept in separate columns on purpose - a single grand
+  total across groups of opposite sign would be meaningless. Each group table
+  also now foots with its own TOTAL row.
+- Payroll Prep Sheet: totals on the New Hire Pro-Ration tab (days, basics and
+  what the month pays) and on the Basic Salaries tab (payroll total now, and
+  what it becomes after corrections). The other four tabs already footed.
+- Trip Log Sheet: a sticky DAY TOTALS row under the grid giving the column
+  total for every day plus the grand quantity and amount. The printed sheet
+  carries the same row. A day keyed twice now shows up immediately.
+- Command Center: totals on Ledger by type, Who owes what, and the Encashment
+  pipeline. The encashment total excludes Rejected, which never counts towards
+  what the company owes.
+
+## v1.13.1
+
+Fixed while running August 2026 payroll.
+
+- New hire pro-ration could never work. deduction_save created the Basic
+  Salary proration override before the Salary Structure Assignment, so every
+  genuine new hire failed with "There is no Salary Structure assigned" and the
+  assignment was never reached. The SSA is now written first, then the
+  override. Full basic from the joining date, prorated for month one, full
+  from the next month, exactly as designed.
+- Allowances readiness line was dishonest. It counted rows, so one unrelated
+  allowance turned it green while the carry-forward had not been done. It now
+  compares the number of people covered this month against last month and
+  stays red until the real carry-forward is in.
+- Payroll can no longer be opened for a new month while an earlier month still
+  has an unsubmitted Payroll Entry. Running a new month on top of an unclosed
+  one is how people get paid twice.
+- Opening a brand new payroll month now always asks a second time, naming the
+  month and the headcount it is about to draft slips for.
+
 # bgl_ops Changelog
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.

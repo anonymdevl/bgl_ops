@@ -584,6 +584,7 @@ def deduction_sheet(month):
             "employees": employees,
             "bases": base_map,
             "new_hires": new_hires,
+            "signoffs": _signoffs(month),
             "proration_drafts": proration_drafts,
             "prev_allowances": prev_allow,
             "allowance_drafts": allow_drafts,
@@ -745,19 +746,18 @@ def deduction_save(month, loans=None, advances=None, absences=None,
             if actual <= 0:
                 continue
             prorated = flt(actual * min(days, 22) / 22.0, 2)
-            act = _upsert_deduction_draft(
-                emp, "Basic Salary", prorated, m_end,
-                f"New Hire Proration - {month_label}: joined "
-                f"{frappe.db.get_value('Employee', emp, 'date_of_joining')}, "
-                f"{days}/22 days x actual basic {flt(actual, 2)}",
-                overwrite=1)
-            if act in ("created", "updated"):
-                out["new_hires"] += 1
-            # SSA at FULL basic from the JOINING DATE, if none exists.
-            # The proration draft (overwrite) trims month one to days/22;
-            # every later month pays full automatically. Dating it next month
-            # would leave THIS month with no assignment - employee silently
-            # skipped by Payroll Entry.
+            # ORDER MATTERS. An Additional Salary cannot be created for an
+            # employee with no Salary Structure Assignment, so the SSA has to
+            # exist FIRST. Doing the proration override first (as this did
+            # before v1.13.1) threw "There is no Salary Structure assigned"
+            # and aborted the row before the SSA was ever written - the
+            # Pro-Ration tab could never handle a genuinely new hire.
+            #
+            # SSA carries the FULL basic from the JOINING DATE; the proration
+            # override below trims month one to days/22. Every later month
+            # then pays full automatically. Dating the SSA next month would
+            # leave THIS month with no assignment and the joiner would be
+            # skipped by Payroll Entry entirely.
             has_ssa = frappe.db.exists(
                 "Salary Structure Assignment",
                 {"employee": emp, "docstatus": 1})
@@ -787,6 +787,14 @@ def deduction_save(month, loans=None, advances=None, absences=None,
                 out["ssa_created"].append(
                     f"{frappe.db.get_value('Employee', emp, 'employee_name')}"
                     f" (base {flt(actual, 2)} from {ssa.from_date})")
+            act = _upsert_deduction_draft(
+                emp, "Basic Salary", prorated, m_end,
+                f"New Hire Proration - {month_label}: joined "
+                f"{frappe.db.get_value('Employee', emp, 'date_of_joining')}, "
+                f"{days}/22 days x actual basic {flt(actual, 2)}",
+                overwrite=1)
+            if act in ("created", "updated"):
+                out["new_hires"] += 1
         except Exception as ex:
             out["errors"].append(f"New hire {row.get('employee')}: {ex}")
 
@@ -964,6 +972,149 @@ def unlock_month(site, month):
     return {"unlocked": unlocked, "drafts_deleted": deleted_drafts}
 
 
+# ---------------------------------------------------------------------------
+# Prep Sheet section sign-off
+# ---------------------------------------------------------------------------
+
+SIGNOFF_SECTIONS = ["New Hire Pro-Ration", "Basic Salaries", "Loans",
+                    "Advances", "Absences", "Allowances and OT"]
+
+_SECTION_COMPONENTS = {
+    "Loans": ("Loans",),
+    "Advances": ("Salary Advance",),
+    "Absences": ("Absent",),
+    "New Hire Pro-Ration": ("Basic Salary",),
+    "Allowances and OT": ("Housing Allowance", "Transport Allowance",
+                          "Extra Duty Allowance", "Overtime Allowance"),
+}
+
+
+def _section_snapshot(month, section):
+    """Cached per request - payroll_readiness asks for the same sections
+    several times while building its lines, and every workspace load calls it."""
+    key = ("bgl_snap", month, section)
+    cache = getattr(frappe.local, "_bgl_snap", None)
+    if cache is None:
+        cache = frappe.local._bgl_snap = {}
+    if key in cache:
+        return cache[key]
+    cache[key] = _section_snapshot_uncached(month, section)
+    return cache[key]
+
+
+def _section_snapshot_uncached(month, section):
+    """What this section holds right now: (rows, money, people).
+
+    Basic Salaries is not Additional Salary data - it is the assignments
+    payroll will use - so it is measured differently."""
+    m_end = _month_end(month)
+    if section == "Basic Salaries":
+        # max(a.base) not a.base: an employee can hold two assignments on the
+        # same from_date, and a bare column beside GROUP BY is rejected
+        # outright when the server runs with ONLY_FULL_GROUP_BY.
+        rows = _q(
+            """select count(*) c, sum(t.base) s from (
+                 select a.employee, max(a.base) base
+                 from `tabSalary Structure Assignment` a
+                 join (select employee, max(from_date) fd
+                       from `tabSalary Structure Assignment`
+                       where docstatus=1 and from_date <= %(d)s
+                       group by employee) x
+                   on x.employee = a.employee and x.fd = a.from_date
+                 join `tabEmployee` e on e.name = a.employee
+                 where a.docstatus=1 and e.status='Active'
+                 group by a.employee) t""", {"d": m_end})
+        r = rows[0] if rows else {}
+        return cint(r.get("c")), flt(r.get("s")), cint(r.get("c"))
+    comps = _SECTION_COMPONENTS.get(section)
+    if not comps:
+        return 0, 0.0, 0
+    r = _q(
+        """select count(*) c, sum(amount) s, count(distinct employee) p
+           from `tabAdditional Salary`
+           where payroll_date between %(ms)s and %(d)s and docstatus < 2
+             and salary_component in %(c)s""",
+        {"ms": f"{month}-01", "d": m_end, "c": comps})[0]
+    return cint(r.c), flt(r.s), cint(r.p)
+
+
+def _signoffs(month):
+    """{section: {...}} for one month, with staleness worked out.
+
+    Returns {} if the table is not there yet - during the migrate that
+    creates it, or if the fixture ever fails to sync. Callers then treat
+    every section as unsigned, which BLOCKS payroll rather than letting it
+    through. Failing closed is the only safe direction here."""
+    out = {}
+    if not frappe.db.table_exists("BGL Payroll Signoff"):
+        return out
+    for row in _q(
+            """select name, section, status, reviewed_by, reviewed_on,
+                      entries_seen, total_seen, note
+               from `tabBGL Payroll Signoff` where month = %(m)s""",
+            {"m": month}):
+        rows, money, _p = _section_snapshot(month, row.section)
+        stale = (row.status == "Reviewed"
+                 and (cint(row.entries_seen) != rows
+                      or abs(flt(row.total_seen) - money) > 0.05))
+        out[row.section] = {
+            "name": row.name, "status": row.status,
+            "reviewed_by": row.reviewed_by, "reviewed_on": str(row.reviewed_on or ""),
+            "entries_seen": cint(row.entries_seen),
+            "total_seen": flt(row.total_seen),
+            "note": row.note, "stale": 1 if stale else 0,
+            "rows_now": rows, "total_now": money,
+        }
+    return out
+
+
+def _signed(month, section):
+    """True only when reviewed AND the numbers have not moved since."""
+    s = _signoffs(month).get(section)
+    return bool(s and s["status"] == "Reviewed" and not s["stale"])
+
+
+@frappe.whitelist()
+def signoff_set(month, section, note=None):
+    """Record that a human reviewed one Prep Sheet section for one month."""
+    _require_access()
+    if section not in SIGNOFF_SECTIONS:
+        frappe.throw(f"Unknown section: {section}")
+    rows, money, _p = _section_snapshot(month, section)
+    name = frappe.db.get_value("BGL Payroll Signoff",
+                               {"month": month, "section": section})
+    doc = (frappe.get_doc("BGL Payroll Signoff", name) if name
+           else frappe.new_doc("BGL Payroll Signoff"))
+    doc.month = month
+    doc.section = section
+    doc.status = "Reviewed"
+    doc.reviewed_by = frappe.session.user
+    doc.reviewed_on = frappe.utils.now_datetime()
+    doc.entries_seen = rows
+    doc.total_seen = money
+    if note is not None:
+        doc.note = note
+    doc.save(ignore_permissions=True)
+    return {"section": section, "status": "Reviewed",
+            "reviewed_by": doc.reviewed_by,
+            "reviewed_on": str(doc.reviewed_on),
+            "entries_seen": rows, "total_seen": money}
+
+
+@frappe.whitelist()
+def signoff_clear(month, section):
+    """Reopen a section - it goes back to needing a review."""
+    _require_access()
+    name = frappe.db.get_value("BGL Payroll Signoff",
+                               {"month": month, "section": section})
+    if name:
+        doc = frappe.get_doc("BGL Payroll Signoff", name)
+        doc.status = "Reopened"
+        doc.save(ignore_permissions=True)
+    return {"section": section, "status": "Reopened"}
+
+
+
 @frappe.whitelist()
 def payroll_readiness(month):
     """Month-by-month pre-payroll checklist for the Command Center."""
@@ -1039,16 +1190,38 @@ def payroll_readiness(month):
          (f"{ded} entries" if ded else "prep sheet not saved yet"),
          "/app/deduction-sheet")
 
-    # 5. allowances carried forward
-    allow = _q(
-        """select count(*) c from `tabAdditional Salary`
-           where payroll_date between %(ms)s and %(d)s and docstatus < 2
-             and salary_component in ('Housing Allowance','Transport Allowance',
-                                      'Extra Duty Allowance','Overtime Allowance')""",
-        {"ms": f"{month}-01", "d": m_end})[0].c
-    line("allowances", "Allowances carried forward", allow > 0,
-         (f"{allow} entries" if allow else "not saved yet"),
-         "/app/deduction-sheet")
+    # 5 + 5b. Allowances and Basic Salaries are SIGNED OFF, not inferred.
+    # Row counts cannot tell "reviewed and correctly unchanged" from "never
+    # touched" - fixed allowances and untouched basics look the same either
+    # way. So a person marks the tab reviewed and the app records who, when,
+    # and the numbers at that moment; if those move afterwards the sign-off
+    # goes stale and the line turns red again on its own.
+    signs = _signoffs(month)
+
+    def signoff_line(key, label, section):
+        s = signs.get(section)
+        rows_now, money_now, people_now = _section_snapshot(month, section)
+        if not s or s["status"] != "Reviewed":
+            detail = (f"{people_now} people / GHS {flt(money_now, 2)} on file "
+                      "- nobody has marked this reviewed yet")
+            line(key, label, False, detail, "/app/deduction-sheet")
+        elif s["stale"]:
+            line(key, label, False,
+                 f"reviewed by {s['reviewed_by']} but the numbers changed "
+                 f"since (was {s['entries_seen']} entries / GHS "
+                 f"{flt(s['total_seen'], 2)}, now {rows_now} / GHS "
+                 f"{flt(money_now, 2)}) - review again",
+                 "/app/deduction-sheet")
+        else:
+            line(key, label, True,
+                 f"reviewed by {s['reviewed_by']} on "
+                 f"{str(s['reviewed_on'])[:16]} - {people_now} people / GHS "
+                 f"{flt(money_now, 2)}",
+                 "/app/deduction-sheet")
+
+    signoff_line("allowances", "Allowances and OT reviewed",
+                 "Allowances and OT")
+    signoff_line("basics", "Basic salaries reviewed", "Basic Salaries")
 
     # 6. foreign / inactive employee check
     foreign = _q(
@@ -1535,7 +1708,7 @@ def _payroll_entries(month):
 
 
 @frappe.whitelist()
-def run_payroll(month):
+def run_payroll(month, confirm=0):
     """Green click 1: create + submit Payroll Entry(ies) for the month,
     copying every repeating field from the previous month's entries.
     Only allowed when the Review board is fully green. Slip creation is
@@ -1561,11 +1734,53 @@ def run_payroll(month):
                      "Sheet first - otherwise these joiners would be "
                      "missing from payroll entirely.")
 
+    # Allowances and basic salaries must be signed off by a person. These are
+    # the two sections whose correct state is often "unchanged", so nothing
+    # the app can measure proves they were looked at.
+    unsigned = [s for s in ("Basic Salaries", "Allowances and OT")
+                if not _signed(month, s)]
+    if unsigned:
+        frappe.throw(
+            "Not reviewed yet: " + ", ".join(unsigned)
+            + ".<br><br>Open the Payroll Prep Sheet, check the tab and press "
+            "<b>Mark reviewed</b>. If nothing needed changing that is a fine "
+            "answer - but somebody has to say so before payroll runs.")
+
     m_start, m_end = _month_bounds(month)
+
+    # A month that spilled over must be closed before the next one opens.
+    # Without this, running late (or on the 1st) would stack a second
+    # Payroll Entry on top of a month still sitting in draft.
+    stale = _q(
+        """select name, start_date, end_date from `tabPayroll Entry`
+           where docstatus = 0 and end_date < %(f)s order by end_date""",
+        {"f": m_start})
+    if stale:
+        frappe.throw(
+            "An earlier payroll month is still open: "
+            + ", ".join(f"{s.name} ({s.start_date} to {s.end_date})"
+                        for s in stale)
+            + f".<br><br>Submit or cancel it before opening {month}. "
+            "Running a new month on top of an unclosed one is how people "
+            "get paid twice.")
+
     existing = _payroll_entries(month)
     if existing:
         return {"created": [], "existing": [e.name for e in existing],
                 "note": "Payroll Entry already exists for this month."}
+
+    # Opening a brand new payroll month is deliberate, never incidental.
+    if not cint(confirm):
+        head = _q(
+            """select count(*) c from `tabEmployee`
+               where status='Active'""")[0].c
+        return {
+            "needs_confirmation": 1, "month": month, "created": [],
+            "message": (
+                f"No Payroll Entry exists for {month} yet, so this OPENS a "
+                f"new payroll month and drafts a salary slip for all {head} "
+                "active staff.<br><br>Only do this once the month is really "
+                "finished. Open it?")}
 
     # template(s): the previous month's submitted entries (handles both one
     # combined run and per-branch runs - we replicate whatever they did last)
