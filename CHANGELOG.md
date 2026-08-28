@@ -2,6 +2,46 @@
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.
 
+## 1.9.9 - 2026-08-28
+- Encashment pipeline now distinguishes the two payment routes. Each row is
+  tagged PAYROLL or CASH and reads correctly for both: "Approved - pays with
+  next payroll" vs "Approved - awaiting cash payment (Payment Entry)", and
+  "Paid with payroll" vs "Paid in cash (Payment Entry)". Previously both
+  routes shared the Unpaid label and cash payouts looked like payroll ones.
+
+## 1.9.8 - 2026-08-28
+- Fix: Employee Hub collapse now actually works. The toggle had been appended
+  outside the block's own function scope, so it never bound to the title -
+  clicking the chevron did nothing. Moved inside and hardened against the
+  workspace stealing the click.
+- BGL Operations workspace is now the single place HR works from:
+  - New shortcuts: Employees, Leave Applications (joining Leave Encashments),
+    plus Payroll Prep, Review & Approve and Payroll Guide which existed but
+    were missing from the layout.
+  - Leave card extended with Leave Allocation, Leave Policy, Leave Policy
+    Assignment, Leave Type and Holiday List.
+  - New "People & Payroll" card: Employee, Attendance, Additional Salary,
+    Salary Slip, Payroll Entry, Salary Structure Assignment, Employee Grade,
+    Department.
+
+## 1.9.7 - 2026-08-28
+- Leave Encashment date guard (server script + form guidance):
+  - Blocks submission when the Encashment Date sits in a month whose payroll
+    has already been run, or in a closed past month - with a plain-English
+    explanation of why the money would never reach a payslip.
+  - On successful submit, states which payroll run will pay it and how much.
+  - Skipped entirely when "Pay Via Payment Entry" is ticked (cash now).
+  - Form intro explains the rule while HR is still filling it in.
+
+## 1.9.6 - 2026-08-28
+- Payroll gate hardened against encashments and mid-month entries:
+  - Review & Approve board gains a "Leave Encashments" group, reconciled
+    against submitted Leave Encashment documents for the month.
+  - Review board and readiness stones now match Additional Salary by the
+    FULL payroll month (1st to month-end) instead of exactly month-end -
+    an encashment dated mid-month can no longer pay while invisible to
+    the gate.
+
 ## 1.9.5 - 2026-08-28
 - Global filter now governs every FLOW figure on the Command Center:
   payroll recovery (loans + advances), the encashment pipeline and

@@ -122,12 +122,15 @@ def dashboard_data(from_date=None, to_date=None, site=None):
         {"f": period_start, "t": period_end})
 
     encash = _q(
-        """select status, count(*) cnt, ifnull(sum(encashment_days),0) days,
-                  ifnull(sum(encashment_amount),0) amt
+        """select status, ifnull(pay_via_payment_entry,0) via_pe,
+                  count(*) cnt, ifnull(sum(encashment_days),0) days,
+                  ifnull(sum(encashment_amount),0) amt,
+                  ifnull(sum(paid_amount),0) paid
            from `tabLeave Encashment`
            where docstatus < 2
              and encashment_date between %(f)s and %(t)s
-           group by status""", {"f": period_start, "t": period_end})
+           group by status, via_pe
+           order by status""", {"f": period_start, "t": period_end})
 
     # Leave summary (company-wide, current allocations)
     leave = {
@@ -913,8 +916,9 @@ def payroll_readiness(month):
         "payroll_month": month, "docstatus": 1, "pulled_to_payroll": 0})
     gen = _q(
         """select count(*) c from `tabAdditional Salary`
-           where payroll_date=%(d)s and docstatus < 2
-             and salary_component in ('Trips','Cubic')""", {"d": m_end})[0].c
+           where payroll_date between %(ms)s and %(d)s and docstatus < 2
+             and salary_component in ('Trips','Cubic')""",
+        {"ms": f"{month}-01", "d": m_end})[0].c
     line("earnings", "Trip earnings generated", unpulled == 0 and gen > 0,
          (f"{gen} entries created" if unpulled == 0 and gen
           else f"{unpulled} locked log(s) not yet pulled"),
@@ -951,9 +955,9 @@ def payroll_readiness(month):
     # 4. deductions saved
     ded = _q(
         """select count(*) c from `tabAdditional Salary`
-           where payroll_date=%(d)s and docstatus < 2
+           where payroll_date between %(ms)s and %(d)s and docstatus < 2
              and salary_component in ('Loans','Salary Advance','Absent')""",
-        {"d": m_end})[0].c
+        {"ms": f"{month}-01", "d": m_end})[0].c
     line("deductions", "Deductions saved", ded > 0,
          (f"{ded} entries" if ded else "prep sheet not saved yet"),
          "/app/deduction-sheet")
@@ -961,10 +965,10 @@ def payroll_readiness(month):
     # 5. allowances carried forward
     allow = _q(
         """select count(*) c from `tabAdditional Salary`
-           where payroll_date=%(d)s and docstatus < 2
+           where payroll_date between %(ms)s and %(d)s and docstatus < 2
              and salary_component in ('Housing Allowance','Transport Allowance',
                                       'Extra Duty Allowance','Overtime Allowance')""",
-        {"d": m_end})[0].c
+        {"ms": f"{month}-01", "d": m_end})[0].c
     line("allowances", "Allowances carried forward", allow > 0,
          (f"{allow} entries" if allow else "not saved yet"),
          "/app/deduction-sheet")
@@ -974,9 +978,9 @@ def payroll_readiness(month):
         """select distinct a.employee, a.employee_name
            from `tabAdditional Salary` a
            left join `tabEmployee` e on e.name = a.employee
-           where a.payroll_date=%(d)s and a.docstatus < 2
+           where a.payroll_date between %(ms)s and %(d)s and a.docstatus < 2
              and (e.name is null or e.status != 'Active')""",
-        {"d": m_end})
+        {"ms": f"{month}-01", "d": m_end})
     line("foreign", "Everyone on payroll is active staff", len(foreign) == 0,
          ("clean" if not foreign else
           "entries exist for: " + ", ".join(
@@ -985,9 +989,9 @@ def payroll_readiness(month):
 
     # 7. drafts awaiting review
     pending = frappe.db.count("Additional Salary", {
-        "payroll_date": m_end, "docstatus": 0})
+        "payroll_date": ("between", [f"{month}-01", m_end]), "docstatus": 0})
     total_entries = frappe.db.count("Additional Salary", {
-        "payroll_date": m_end, "docstatus": ("<", 2)})
+        "payroll_date": ("between", [f"{month}-01", m_end]), "docstatus": ("<", 2)})
     line("review", "All drafts reviewed and submitted",
          pending == 0 and total_entries > 0,
          (f"{pending} draft(s) awaiting review" if pending else
@@ -1007,6 +1011,7 @@ def payroll_readiness(month):
 
 REVIEW_GROUPS = {
     "trip_earnings": {"label": "Trip Earnings", "components": ["Trips", "Cubic"]},
+    "encashments": {"label": "Leave Encashments", "components": ["Leave Encashment"]},
     "loans": {"label": "Loans", "components": ["Loans"]},
     "advances": {"label": "Salary Advances", "components": ["Salary Advance"]},
     "absences": {"label": "Absences", "components": ["Absent"]},
@@ -1030,10 +1035,10 @@ def review_board(month):
         """select name, employee, employee_name, salary_component,
                   amount, docstatus, ifnull(custom_bgl_note, '') as remark
            from `tabAdditional Salary`
-           where payroll_date=%(d)s and docstatus < 2
+           where payroll_date between %(ms)s and %(d)s and docstatus < 2
              and salary_component in %(comps)s
            order by salary_component, employee_name""",
-        {"d": m_end, "comps": all_comps})
+        {"ms": f"{month}-01", "d": m_end, "comps": all_comps})
 
     groups = {}
     for key, g in REVIEW_GROUPS.items():
@@ -1061,6 +1066,15 @@ def review_board(month):
     groups["loans"]["source"] = flt(loans_src, 2)
     groups["loans"]["source_label"] = "loan ledger repayments"
 
+    # encashments vs submitted Leave Encashment documents for the month
+    enc_src = _q(
+        """select ifnull(sum(encashment_amount),0) v from `tabLeave Encashment`
+           where docstatus=1
+             and encashment_date between %(ms)s and %(d)s""",
+        {"ms": f"{month}-01", "d": m_end})[0].v
+    groups["encashments"]["source"] = flt(enc_src, 2)
+    groups["encashments"]["source_label"] = "submitted encashment documents"
+
     # advances + allowances vs last month (informational)
     for key, comps in (("advances", ["Salary Advance"]),
                        ("allowances", ["Housing Allowance", "Transport Allowance",
@@ -1079,13 +1093,15 @@ def review_board(month):
         """select distinct a.employee, a.employee_name
            from `tabAdditional Salary` a
            left join `tabEmployee` e on e.name=a.employee
-           where a.payroll_date=%(d)s and a.docstatus < 2
-             and (e.name is null or e.status != 'Active')""", {"d": m_end})
+           where a.payroll_date between %(ms)s and %(d)s and a.docstatus < 2
+             and (e.name is null or e.status != 'Active')""",
+        {"ms": f"{month}-01", "d": m_end})
     dups = _q(
         """select employee, employee_name, salary_component, count(*) c
            from `tabAdditional Salary`
-           where payroll_date=%(d)s and docstatus < 2
-           group by employee, salary_component having c > 1""", {"d": m_end})
+           where payroll_date between %(ms)s and %(d)s and docstatus < 2
+           group by employee, salary_component having c > 1""",
+        {"ms": f"{month}-01", "d": m_end})
 
     total_drafts = sum(g["drafts"] for g in groups.values())
     ready = total_drafts == 0 and not foreign and not dups and \

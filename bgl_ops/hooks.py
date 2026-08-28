@@ -27,7 +27,7 @@ fixtures = [
     {"dt": "Server Script", "filters": [["name", "in", [
         "bgl_auto_leave_anniversary", "bgl_leave_encashment_amount",
         "bgl_leave_status_after_submit", "bgl_leave_status_after_cancel",
-        "bgl_leave_status_sync",
+        "bgl_leave_status_sync", "bgl_encashment_date_guard",
     ]]]},
     # All site-specific custom fields (app-generated hrms/erpnext fields excluded)
     {"dt": "Custom Field", "filters": [["name", "in", [
@@ -58,6 +58,7 @@ fixtures = [
     {"dt": "Client Script", "filters": [["name", "in", [
         "Daily Trip Log - Auto Cost",
         "Staff Loan Advance - Balance",
+        "Leave Encashment - Date Guidance",
     ]]]},
     {"dt": "Report", "filters": [["name", "in", [
         "BGL Trip Costing", "BGL Trips - Yesterday", "BGL Leave Balance Board",

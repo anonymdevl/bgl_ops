@@ -555,7 +555,7 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
         <div class="note"><b>Liability lens:</b> unused entitled days are a real cash liability. The full per-employee breakdown lives in the Leave Balance Board.</div>
       </div>
       <div class="panel">
-        <h3>Encashment pipeline</h3><p class="cap">Leave days staff are cashing out in the selected period - request &rarr; approval &rarr; paid with payroll</p>
+        <h3>Encashment pipeline</h3><p class="cap">Leave days staff are cashing out - each row shows whether it pays with <b>payroll</b> or as <b>cash</b> via Payment Entry</p>
         <div class="twrap"><table>
           <thead><tr><th>Stage</th><th class="r">Requests</th><th class="r">Days</th><th class="r">GHS</th></tr></thead>
           <tbody id="encbody"><tr><td colspan="4" class="empty">No leave encashments recorded yet.</td></tr></tbody>
@@ -865,9 +865,20 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
         '<div class="bar"><span class="nm">Taken</span><span class="t"><span class="f" style="width:'+Math.min(100,Math.round(d.leave.taken/ent*100))+'%;background:linear-gradient(90deg,var(--teal),#6fd6dd)"></span></span><span class="v">'+fmt(d.leave.taken)+'</span></div>'+
         '<div class="bar"><span class="nm">Remaining</span><span class="t"><span class="f" style="width:'+Math.min(100,Math.round(Math.max(0,ent-d.leave.taken)/ent*100))+'%;background:linear-gradient(90deg,var(--good),#79dcab)"></span></span><span class="v">'+fmt(Math.max(0,ent-d.leave.taken))+'</span></div>';
       if((d.encash||[]).length){
-        var ENCL={'Draft':'Requested - awaiting HR approval','Unpaid':'Approved - pays with next payroll','Submitted':'Approved - pays with next payroll','Paid':'Paid','Cancelled':'Cancelled'};
+        function encStage(r){
+          var pe = +r.via_pe === 1;
+          if(r.status==='Draft') return ['Requested - awaiting HR approval', pe?'cash':'payroll'];
+          if(r.status==='Unpaid'||r.status==='Submitted')
+            return [pe? 'Approved - awaiting cash payment (Payment Entry)'
+                      : 'Approved - pays with next payroll', pe?'cash':'payroll'];
+          if(r.status==='Paid') return [pe? 'Paid in cash (Payment Entry)' : 'Paid with payroll', pe?'cash':'payroll'];
+          return [r.status, pe?'cash':'payroll'];
+        }
         el('encbody').innerHTML=d.encash.map(function(r){
-          return '<tr><td>'+esc(ENCL[r.status]||r.status)+'</td><td class="r">'+r.cnt+'</td><td class="r">'+fmt(r.days)+'</td><td class="r">'+fmt(r.amt)+'</td></tr>'; }).join('');
+          var st=encStage(r), paid=r.status==='Paid';
+          var tag='<span class="tag '+(st[1]==='cash'?'t-info':'t-ok')+'" style="margin-left:8px">'+(st[1]==='cash'?'CASH':'PAYROLL')+'</span>';
+          return '<tr><td'+(paid?' style="color:var(--good,#2fb56f)"':'')+'>'+esc(st[0])+tag+'</td>'+
+            '<td class="r">'+r.cnt+'</td><td class="r">'+fmt(r.days)+'</td><td class="r">'+fmt(r.amt)+'</td></tr>'; }).join('');
       }
     });
     api('whos_out', {site:PERIOD.site}, function(w){
