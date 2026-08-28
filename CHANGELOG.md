@@ -1,3 +1,60 @@
+## v1.18.0
+
+- Approve every draft in one pass, optional. Group by group is untouched
+  for anyone who wants to read each line; this is for the manager who
+  trusts whoever did the prep sheet. Same gate either way: nobody who has
+  left may be sitting on payroll.
+- Batched 75 at a time. A 600 draft month used to mean a long silent
+  spinner; now the button counts up and a bar fills, and no single request
+  runs long enough to time out. Run payroll appears as soon as it finishes.
+- Employee status is cached per save. The leaver guard added in v1.16.0
+  was costing one query per row, which is part of why saving felt slow.
+
+## v1.17.0
+
+New. Tab A2, Existing Staff Pro-Ration, optional.
+
+- For someone already on payroll who worked part of the month - changed
+  role mid-month, left, suspended, unpaid leave. Enter days worked and the
+  agreed full monthly salary; saving puts that salary on an assignment
+  effective the 1st and deducts the days not worked.
+- Order of creation is deliberate: the Salary Structure Assignment is
+  written FIRST, then the Absent line that depends on it. That is the same
+  deadlock that made the new hire tab unusable before v1.13.1.
+- A person on both A2 and the Absences tab is refused with a message
+  rather than silently overwritten - both tabs write the same component.
+- Part month rows no longer appear on the Absences tab, and reload
+  rebuilds days worked and full salary from what was saved.
+
+Fixed. Advances no longer carry last month's amount forward.
+
+- Every advance box now starts at 0. An advance is a one-off, not a
+  standing deduction, so pre-filling last month charged people who took
+  nothing this month unless somebody zeroed every row by hand. Two August
+  records were created this way. Last month stays on screen as a
+  reference, which is all it was ever meant to be.
+
+## v1.16.0
+
+Saving the August prep sheet threw a wall of raw ERPNext errors and lost
+GHS 2,000 of advances without saying so. Root cause: the carry-forward tabs
+pre-filled from last month with no check that the person still works here,
+so three leavers were offered, and ERPNext refused them one at a time in
+language nobody can act on.
+
+- Leavers are filtered out of the advance and allowance carry-forward at
+  source. They are never offered again.
+- Anything still refused is reported by name in plain words under Left out
+  on purpose, instead of being thrown. One bad row can no longer bury a
+  whole save.
+- A component already submitted for that date is left alone rather than
+  inserted a second time, which is what produced the overwrite error.
+- Who owes what now shows the loan ledger AND this month's salary
+  advances, with All, Loans and Advances filter chips and a name search.
+  The 25 row cap is gone.
+- The Field crew card reads active staff, because that is what it counts.
+  Total staff would have to change with history to be true.
+
 ## v1.15.0
 
 Weekends are visible everywhere, because they are paid differently.

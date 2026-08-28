@@ -307,6 +307,14 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
     <span class="plabel" id="f-label"></span>
   </div>
 
+  <style>
+    .owe-ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+    .owe-chip{border:1px solid var(--line);border-radius:100px;padding:5px 14px;font-size:12px;
+      cursor:pointer;color:var(--faint);user-select:none}
+    .owe-chip.on{background:var(--amber,#f0a04b);border-color:var(--amber,#f0a04b);color:#1a1206;font-weight:700}
+    #owe-q{margin-left:auto;background:var(--panel2,#151b28);border:1px solid var(--line);
+      color:inherit;border-radius:9px;padding:6px 12px;font:inherit;font-size:12.5px;min-width:180px}
+  </style>
   <!-- ============ OVERVIEW ============ -->
   <section class="view on" id="v-overview">
     <div class="kpis">
@@ -494,7 +502,13 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
     <div class="panel">
       <div class="phead"><h3>Who owes what</h3>
         <span class="links"><a href="/app/staff-loan-advance/new" target="_blank">+ New loan / advance</a></span></div>
-      <p class="cap">Top outstanding balances from the ledger</p>
+      <p class="cap">Loan ledger plus this month's salary advances</p>
+      <div class="owe-ctl">
+        <span class="owe-chip on" data-owe="all">All</span>
+        <span class="owe-chip" data-owe="loan">Loans</span>
+        <span class="owe-chip" data-owe="advance">Advances</span>
+        <input id="owe-q" placeholder="Search a name...">
+      </div>
       <div class="twrap"><table>
         <thead><tr><th>Employee</th><th>Type</th><th class="r">Principal</th><th class="r">Repaid</th><th class="r">Balance</th><th>Status</th></tr></thead>
         <tbody id="l-rows"><tr><td colspan="6" class="empty">No ledger records yet. Send the seed list and this table fills for all staff.</td></tr></tbody>
@@ -769,7 +783,7 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
         .sort(function(a,b){ return b[1]-a[1]; }); }
       CREW={All:toRows(all), Airport:toRows(air), Tema:toRows(tem)};
       countUp('k-crew', crewTotal);
-      el('k-crew2').innerHTML='Drivers &amp; operators | <b>'+d.headcount+'</b> total staff';
+      el('k-crew2').innerHTML='Drivers &amp; operators | <b>'+d.headcount+'</b> active staff';
       el('k-sites2').textContent='Airport '+airT+' | Tema '+temT+' crew';
       renderCrew('All');
 
@@ -850,16 +864,19 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
           '<tr><td><b>TOTAL</b></td><td class="r"><b>'+ltc+'</b></td><td class="r"><b>'+fmt(ltp)+'</b></td>'+
           '<td class="r"><b>'+fmt(ltr)+'</b></td><td class="r"><b>'+fmt(ltb)+'</b></td></tr>';
       }
-      if((d.loan_rows||[]).length){
-        var lrp=0,lrr=0,lrb=0;
-        el('l-rows').innerHTML=d.loan_rows.map(function(r){
-          lrp+=(r.principal||0); lrr+=(r.total_repaid||0); lrb+=(r.balance||0);
-          var tag=r.status==='Fully Paid'? '<span class="tag t-paid">Paid</span>' : '<span class="tag t-act">Active</span>';
-          return '<tr><td>'+esc(r.employee_name)+'</td><td>'+esc(r.loan_type)+'</td><td class="r">'+fmt(r.principal)+'</td>'+
-                 '<td class="r">'+fmt(r.total_repaid)+'</td><td class="r"><b>'+fmt(r.balance)+'</b></td><td>'+tag+'</td></tr>'; }).join('')+
-          '<tr><td><b>TOTAL</b></td><td><b>'+d.loan_rows.length+' shown</b></td><td class="r"><b>'+fmt(lrp)+'</b></td>'+
-          '<td class="r"><b>'+fmt(lrr)+'</b></td><td class="r"><b>'+fmt(lrb)+'</b></td><td></td></tr>';
-      }
+      // one table, two sources: the loan ledger and this month's advances
+      OWE=[];
+      (d.loan_rows||[]).forEach(function(r){
+        OWE.push({kind:'loan', name:r.employee_name, type:r.loan_type||'Loan',
+          principal:+r.principal||0, repaid:+r.total_repaid||0, balance:+r.balance||0,
+          tag: r.status==='Fully Paid'? '<span class="tag t-paid">Paid</span>' : '<span class="tag t-act">Active</span>'});
+      });
+      (d.advance_rows||[]).forEach(function(r){
+        OWE.push({kind:'advance', name:r.employee_name, type:'Advance',
+          principal:+r.amount||0, repaid:0, balance:+r.amount||0,
+          tag:'<span class="tag t-act">This month</span>'});
+      });
+      renderOwe();
 
       // leave tab
       countUp('v-ent', d.leave.entitled);
@@ -1440,6 +1457,42 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
         el('pr-verdict').innerHTML = r.ready?
           '<span style="color:#4ecb8d">READY for Payroll Entry</span>' :
           '<span style="color:#e8776b">NOT READY - fix the red lines</span>';
+      });
+    });
+  })();
+
+  // ---- who owes what: filter by type, search by name ----
+  var OWE=[], OWEF='all';
+  function renderOwe(){
+    var q=(el('owe-q')&&el('owe-q').value||'').toLowerCase();
+    var rows=OWE.filter(function(r){
+      if(OWEF!=='all' && r.kind!==OWEF) return false;
+      return !q || (r.name||'').toLowerCase().indexOf(q)>-1;
+    });
+    if(!rows.length){
+      // an empty source and an empty filter are different problems
+      el('l-rows').innerHTML='<tr><td colspan="6" class="empty">'+
+        (OWE.length? 'No one matches that filter or search.'
+                   : 'No loans in the ledger and no advances this month.')+
+        '</td></tr>';
+      return;
+    }
+    var p=0,rp=0,b=0;
+    el('l-rows').innerHTML=rows.map(function(r){
+      p+=r.principal; rp+=r.repaid; b+=r.balance;
+      return '<tr><td>'+esc(r.name)+'</td><td>'+esc(r.type)+'</td><td class="r">'+fmt(r.principal)+'</td>'+
+             '<td class="r">'+fmt(r.repaid)+'</td><td class="r"><b>'+fmt(r.balance)+'</b></td><td>'+r.tag+'</td></tr>';
+    }).join('')+
+      '<tr><td><b>TOTAL</b></td><td><b>'+rows.length+' of '+OWE.length+'</b></td><td class="r"><b>'+fmt(p)+'</b></td>'+
+      '<td class="r"><b>'+fmt(rp)+'</b></td><td class="r"><b>'+fmt(b)+'</b></td><td></td></tr>';
+  }
+  (function(){
+    var q=el('owe-q');
+    if(q) q.addEventListener('input', renderOwe);
+    document.querySelectorAll('.owe-chip').forEach(function(c){
+      c.addEventListener('click', function(){
+        document.querySelectorAll('.owe-chip').forEach(function(x){ x.classList.remove('on'); });
+        c.classList.add('on'); OWEF=c.dataset.owe; renderOwe();
       });
     });
   })();

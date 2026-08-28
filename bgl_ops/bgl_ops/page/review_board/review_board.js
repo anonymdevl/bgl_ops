@@ -62,6 +62,14 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 		.rvb-sum td.l,.rvb-sum th.l{text-align:left}\
 		.rvb-sum tr.grand td{font-weight:700;background:var(--subtle-fg);border-top:2px solid var(--border-color)}\
 		.rvb-sum tr.net td{font-weight:700;color:var(--blue-500)}\
+		.rvb-bulk{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 16px;\
+			padding:12px 16px;border:1px solid var(--border-color);border-radius:10px;background:var(--subtle-fg)}\
+		.rvb-bulk b{font-size:13px}\
+		.rvb-bulk .sub{font-size:12px;color:var(--text-muted)}\
+		.rvb-bulk .btn{margin-left:auto}\
+		.rvb-prog{height:6px;border-radius:99px;background:var(--border-color);overflow:hidden;\
+			flex:0 0 100%;margin-top:4px;display:none}\
+		.rvb-prog span{display:block;height:100%;width:0;background:var(--orange-500);transition:width .25s}\
 	</style>').appendTo(body);
 	var holder = $('<div></div>').appendTo(body);
 	holder.html('<p class="text-muted" style="padding:14px">Pick a month and Load.</p>');
@@ -148,9 +156,53 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 				(g.drafts ? '<button class="btn btn-sm btn-primary rvb-approve" data-g="' + key + '" style="margin-top:10px">Approve ' + g.drafts + ' draft(s)</button>' : '') +
 				'</div></div>';
 		});
+		// optional shortcut for whoever trusts the prep sheet. Group by group
+		// is untouched below for anyone who wants to read every line.
+		var pending = 0, pendamt = 0;
+		Object.keys(d.groups).forEach(function(key) {
+			var g = d.groups[key];
+			pending += g.drafts || 0;
+			(g.rows || []).forEach(function(r) { if (!r.docstatus) pendamt += flt(r.amount); });
+		});
+		if (pending) {
+			h = '<div class="rvb-bulk"><div><b>' + pending + ' draft(s) still to approve</b>' +
+				'<div class="sub">GHS ' + fmt(pendamt) + ' across every group. Approving here is identical to pressing Approve on each group in turn.</div></div>' +
+				'<button class="btn btn-sm btn-primary" id="rvb-all">Approve every draft</button>' +
+				'<div class="rvb-prog"><span></span></div></div>' + h;
+		}
 		h += '<div id="rvb-pay"></div>';
 		holder.html(h);
 		render_payzone();
+		holder.find('#rvb-all').on('click', function() {
+			var btn = $(this), bar = holder.find('.rvb-prog'), fill = bar.find('span');
+			var total = parseInt(btn.closest('.rvb-bulk').find('b').text(), 10) || 0, done = 0;
+			frappe.confirm(
+				'Approve and SUBMIT all ' + total + ' remaining draft(s)?<br><br>' +
+				'They become live payroll entries in one pass. Anyone who is no longer active staff will stop this, by design.',
+				function() {
+					btn.prop('disabled', true); bar.show();
+					// batched: keeps each request short and shows the count climbing
+					(function next() {
+						frappe.call({
+							method: 'bgl_ops.api.approve_all',
+							args: { month: state.month, limit: 75 },
+							callback: function(r) {
+								var m = r.message || {};
+								done += (m.approved || 0);
+								btn.text('Approving... ' + done + ' of ' + total);
+								fill.css('width', Math.round(done / Math.max(total, 1) * 100) + '%');
+								if ((m.errors || []).length) {
+									frappe.msgprint({ title: 'Some drafts could not be approved', message: m.errors.join('<br>') });
+									load(); return;
+								}
+								if (m.remaining > 0 && m.approved > 0) { next(); return; }
+								frappe.show_alert({ message: done + ' draft(s) approved. Run payroll below.', indicator: 'green' }, 7);
+								load();
+							}
+						});
+					})();
+				});
+		});
 		holder.find('.rvb-h').on('click', function() { $(this).parent().toggleClass('open'); });
 		holder.find('.rvb-approve').on('click', function(e) {
 			e.stopPropagation();

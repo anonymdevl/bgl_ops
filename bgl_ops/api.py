@@ -113,7 +113,20 @@ def dashboard_data(from_date=None, to_date=None, site=None):
         """select name, employee_name, loan_type, principal, total_repaid, balance, status
            from `tabStaff Loan Advance`
            where status in ('Active','Fully Paid')
-           order by balance desc limit 25""")
+           order by balance desc limit 500""")
+
+    # Salary advances are not ledger records - they are recovered in full the
+    # same month - but "who owes what" is the question people actually ask,
+    # so this month's advances belong in the same table.
+    advance_rows = _q(
+        """select a.employee, a.employee_name, a.amount
+           from `tabAdditional Salary` a
+           join `tabEmployee` e on e.name = a.employee
+           where a.docstatus < 2 and a.salary_component = 'Salary Advance'
+             and a.payroll_date between %(ms)s and %(me)s
+           order by a.amount desc""",
+        {"ms": get_first_day(getdate(today())).strftime("%Y-%m-%d"),
+         "me": _month_end(today()[:7])})
 
     # Interim view until the ledger is seeded: live payroll deductions (last 40 days)
     payroll_recovery = _q(
@@ -177,6 +190,7 @@ def dashboard_data(from_date=None, to_date=None, site=None):
         "trend_14d": trend,
         "active_loans": loans,
         "loan_rows": loan_rows,
+        "advance_rows": advance_rows,
         "payroll_recovery": payroll_recovery,
         "encash": encash,
         "leave": leave,
@@ -479,13 +493,39 @@ def deduction_sheet(month):
            where status='Active' and loan_type != 'Salary Advance'
            order by employee_name""")
 
-    # Current month's saved drafts (so reloading shows what was entered)
+    # Current month's saved drafts (so reloading shows what was entered).
+    # Part-month pro-rations also live in the Absent component, but they
+    # belong to tab A2 and must not surface on the Absences tab as well -
+    # both tabs write the same component and the second save would silently
+    # overwrite the first.
     drafts = _q(
         """select name, employee, salary_component, amount
            from `tabAdditional Salary`
            where docstatus=0 and payroll_date=%(d)s
-             and salary_component in %(comps)s""",
+             and salary_component in %(comps)s
+             and ifnull(custom_bgl_note,'') not like 'Part month%%'""",
         {"d": m_end, "comps": DEDUCT_COMPONENTS})
+
+    # tab A2: rebuild days worked and full salary from what was saved
+    proration_rows = []
+    for r in _q(
+            """select a.employee, e.employee_name, a.amount
+               from `tabAdditional Salary` a
+               join `tabEmployee` e on e.name = a.employee
+               where a.docstatus=0 and a.payroll_date=%(d)s
+                 and a.salary_component='Absent'
+                 and a.custom_bgl_note like 'Part month%%'""",
+            {"d": m_end}):
+        hit = _q(
+            """select base from `tabSalary Structure Assignment`
+               where employee=%(e)s and docstatus=1 and from_date <= %(d)s
+               order by from_date desc limit 1""",
+            {"e": r.employee, "d": m_end})
+        base = flt(hit[0].base) if hit else 0
+        days = round(22.0 - (flt(r.amount) * 22.0 / base), 1) if base else 0
+        proration_rows.append({
+            "employee": r.employee, "employee_name": r.employee_name,
+            "days": days, "full_salary": base})
 
     # Current basic (latest submitted SSA) per active employee - the
     # "Basic Salaries" review tab. Sarah's team corrects wrong ones here.
@@ -505,12 +545,17 @@ def deduction_sheet(month):
               if not (b.employee in seen_emp or seen_emp.add(b.employee))]
 
     # Last month's submitted advances = this month's pre-fill
+    # Only people who still work here. Carrying a leaver forward is how
+    # Sarah ended up facing raw "Transactions cannot be created for an
+    # Inactive Employee" errors with GHS 2,000 quietly missing.
     prev_adv = _q(
-        """select employee, employee_name, amount
-           from `tabAdditional Salary`
-           where docstatus=1 and payroll_date=%(d)s
-             and salary_component='Salary Advance'
-           order by employee_name""",
+        """select a.employee, a.employee_name, a.amount
+           from `tabAdditional Salary` a
+           join `tabEmployee` e on e.name = a.employee
+           where a.docstatus=1 and a.payroll_date=%(d)s
+             and a.salary_component='Salary Advance'
+             and e.status='Active'
+           order by a.employee_name""",
         {"d": prev_end})
 
     employees = _q(
@@ -555,11 +600,13 @@ def deduction_sheet(month):
     ALLOWANCE_COMPONENTS = ("Housing Allowance", "Transport Allowance",
                             "Extra Duty Allowance", "Overtime Allowance")
     prev_allow = _q(
-        """select employee, employee_name, salary_component, amount
-           from `tabAdditional Salary`
-           where docstatus=1 and payroll_date=%(d)s
-             and salary_component in %(comps)s
-           order by employee_name""",
+        """select a.employee, a.employee_name, a.salary_component, a.amount
+           from `tabAdditional Salary` a
+           join `tabEmployee` e on e.name = a.employee
+           where a.docstatus=1 and a.payroll_date=%(d)s
+             and a.salary_component in %(comps)s
+             and e.status='Active'
+           order by a.employee_name""",
         {"d": prev_end, "comps": ALLOWANCE_COMPONENTS})
     allow_drafts = _q(
         """select employee, salary_component, amount
@@ -586,6 +633,7 @@ def deduction_sheet(month):
             "new_hires": new_hires,
             "signoffs": _signoffs(month),
             "proration_drafts": proration_drafts,
+            "proration_rows": proration_rows,
             "prev_allowances": prev_allow,
             "allowance_drafts": allow_drafts,
             "ot_locked": ot_locked}
@@ -593,7 +641,25 @@ def deduction_sheet(month):
 
 def _upsert_deduction_draft(employee, component, amount, m_end, remark,
                             overwrite=0):
-    """Create/update/delete ONE draft Additional Salary. Returns action."""
+    """Create/update/delete ONE draft Additional Salary. Returns action.
+
+    Two refusals are RETURNED rather than raised, so one bad row cannot
+    bury a whole save under ERPNext stack messages:
+      inactive  - the employee has left
+      submitted - already submitted for this date, so inserting again
+                  trips the overwrite guard"""
+    cache = getattr(frappe.local, "_bgl_empstat", None)
+    if cache is None:
+        cache = frappe.local._bgl_empstat = {}
+    if employee not in cache:
+        cache[employee] = frappe.db.get_value("Employee", employee, "status")
+    if cache[employee] != "Active":
+        return "inactive"
+    if frappe.db.exists(
+            "Additional Salary",
+            {"employee": employee, "salary_component": component,
+             "payroll_date": m_end, "docstatus": 1}):
+        return "submitted"
     existing = frappe.db.get_value(
         "Additional Salary",
         {"employee": employee, "salary_component": component,
@@ -626,7 +692,8 @@ def _upsert_deduction_draft(employee, component, amount, m_end, remark,
 
 @frappe.whitelist()
 def deduction_save(month, loans=None, advances=None, absences=None,
-                   new_hires=None, allowances=None, basics=None):
+                   new_hires=None, allowances=None, basics=None,
+                   prorations=None):
     """Save the Monthly Deduction Sheet.
 
     loans:    [{loan, amount}]        -> ledger repayment + draft 'Loans'
@@ -646,6 +713,8 @@ def deduction_save(month, loans=None, advances=None, absences=None,
     advances = json.loads(advances) if isinstance(advances, str) else (advances or [])
     absences = json.loads(absences) if isinstance(absences, str) else (absences or [])
     new_hires = json.loads(new_hires) if isinstance(new_hires, str) else (new_hires or [])
+    prorations = json.loads(prorations) if isinstance(prorations, str) \
+        else (prorations or [])
     allowances = json.loads(allowances) if isinstance(allowances, str) else (allowances or [])
     basics = json.loads(basics) if isinstance(basics, str) else (basics or [])
 
@@ -654,8 +723,21 @@ def deduction_save(month, loans=None, advances=None, absences=None,
     month_label = f"{calendar.month_name[mon]} {year}"
     ref = f"PAYROLL-{month}"
     out = {"loans": 0, "advances": 0, "absences": 0, "new_hires": 0,
-           "allowances": 0, "ssa_created": [], "cleared": [], "errors": [],
+           "allowances": 0, "prorations": 0,
+           "ssa_created": [], "cleared": [], "errors": [],
+           "skipped": [],
            "basics_changed": [], }
+
+    def note_skip(action, employee, what):
+        """Turn a refusal into one line a person can act on."""
+        if action not in ("inactive", "submitted"):
+            return
+        nm = frappe.db.get_value("Employee", employee, "employee_name") or employee
+        out["skipped"].append(
+            f"{nm} - {what} not saved, no longer active staff"
+            if action == "inactive" else
+            f"{nm} - {what} already submitted, left untouched")
+
 
     for row in loans:
         try:
@@ -685,9 +767,10 @@ def deduction_save(month, loans=None, advances=None, absences=None,
             elif doc.status == "Fully Paid":
                 doc.status = "Active"
             doc.save()
-            _upsert_deduction_draft(
+            note_skip(_upsert_deduction_draft(
                 doc.employee, "Loans", amount, m_end,
-                f"Loan installment {month_label} ({doc.name}) via deduction sheet")
+                f"Loan installment {month_label} ({doc.name}) via deduction sheet"),
+                doc.employee, "loan installment")
             if amount > 0:
                 out["loans"] += 1
         except Exception as ex:
@@ -699,6 +782,7 @@ def deduction_save(month, loans=None, advances=None, absences=None,
                 row.get("employee"), "Salary Advance",
                 flt(row.get("amount") or 0), m_end,
                 f"Salary advance {month_label} via deduction sheet")
+            note_skip(act, row.get("employee"), "salary advance")
             if act in ("created", "updated"):
                 out["advances"] += 1
         except Exception as ex:
@@ -728,10 +812,96 @@ def deduction_save(month, loans=None, advances=None, absences=None,
                 emp, "Absent", amount, m_end,
                 f"Absent {month_label}: {days} day(s) x (base {flt(base, 2)}"
                 f" / 22) via deduction sheet", overwrite=1)
+            note_skip(act, emp, "absent days")
             if act in ("created", "updated"):
                 out["absences"] += 1
         except Exception as ex:
             out["errors"].append(f"Absence {row.get('employee')}: {ex}")
+
+    # ---- Existing staff proration (optional) ----------------------------
+    # Somebody already on payroll who worked only part of the month. Unlike a
+    # new hire there IS a live assignment, so the shape is: put the agreed
+    # full salary on an assignment effective the 1st, then deduct the days
+    # not worked. SSA FIRST - the Absent line cannot be created without one,
+    # and its amount is computed from that base.
+    absent_this_save = {r.get("employee") for r in absences
+                        if flt(r.get("days") or 0) > 0}
+    m_start_p = f"{month}-01"
+    for row in prorations:
+        try:
+            emp = row.get("employee")
+            days = flt(row.get("days") or 0)
+            full = flt(row.get("full_salary") or 0)
+            if not emp or full <= 0 or days <= 0:
+                continue
+            if days >= 22:
+                out["skipped"].append(
+                    f"{frappe.db.get_value('Employee', emp, 'employee_name')}"
+                    " - 22 days or more is a whole month, nothing to prorate")
+                continue
+            if emp in absent_this_save:
+                # both tabs write the same Absent component; last one wins.
+                # Refuse rather than quietly overwrite the other.
+                out["skipped"].append(
+                    f"{frappe.db.get_value('Employee', emp, 'employee_name')}"
+                    " - on the Absences tab as well, pro-ration not applied."
+                    " Use one tab or the other, not both")
+                continue
+
+            # 1. assignment first
+            cur = _q(
+                """select base from `tabSalary Structure Assignment`
+                   where employee=%(e)s and docstatus=1 and from_date <= %(d)s
+                   order by from_date desc limit 1""",
+                {"e": emp, "d": m_end})
+            if not cur:
+                out["errors"].append(
+                    f"Proration {emp}: no salary structure assigned yet")
+                continue
+            if flt(cur[0].base) != full:
+                tmpl = _q(
+                    """select salary_structure, income_tax_slab, company,
+                              currency, payroll_payable_account
+                       from `tabSalary Structure Assignment`
+                       where employee=%(e)s and docstatus=1
+                       order by from_date desc limit 1""", {"e": emp})
+                t = tmpl[0] if tmpl else {}
+                if not frappe.db.exists("Salary Structure Assignment",
+                                        {"employee": emp, "docstatus": 1,
+                                         "from_date": m_start_p}):
+                    ssa = frappe.get_doc({
+                        "doctype": "Salary Structure Assignment",
+                        "employee": emp,
+                        "salary_structure": t.get("salary_structure")
+                            or "Main Structure - BGL",
+                        "income_tax_slab": t.get("income_tax_slab"),
+                        "company": t.get("company")
+                            or frappe.db.get_value("Employee", emp, "company"),
+                        "currency": t.get("currency") or "GHS",
+                        "payroll_payable_account":
+                            t.get("payroll_payable_account"),
+                        "from_date": m_start_p,
+                        "base": full,
+                    })
+                    ssa.insert()
+                    ssa.submit()
+                    out["ssa_created"].append(
+                        f"{frappe.db.get_value('Employee', emp, 'employee_name')}"
+                        f" (base {flt(full, 2)} from {m_start_p})")
+
+            # 2. then the deduction for the days not worked
+            unworked = 22.0 - days
+            amount = flt(full * unworked / 22.0, 2)
+            act = _upsert_deduction_draft(
+                emp, "Absent", amount, m_end,
+                f"Part month {month_label}: worked {days} of 22 days. "
+                f"{unworked} unworked day(s) x (base {flt(full, 2)} / 22)",
+                overwrite=1)
+            note_skip(act, emp, "part month pro-ration")
+            if act in ("created", "updated"):
+                out["prorations"] += 1
+        except Exception as ex:
+            out["errors"].append(f"Proration {row.get('employee')}: {ex}")
 
     # ---- New hire proration: Basic Salary override + next-month SSA ----
     if mon == 12:
@@ -793,6 +963,7 @@ def deduction_save(month, loans=None, advances=None, absences=None,
                 f"{frappe.db.get_value('Employee', emp, 'date_of_joining')}, "
                 f"{days}/22 days x actual basic {flt(actual, 2)}",
                 overwrite=1)
+            note_skip(act, emp, "new hire pro-ration")
             if act in ("created", "updated"):
                 out["new_hires"] += 1
         except Exception as ex:
@@ -868,6 +1039,7 @@ def deduction_save(month, loans=None, advances=None, absences=None,
                     emp, comp, amt, m_end,
                     f"{comp} {month_label} via payroll prep sheet",
                     overwrite=1)
+                note_skip(act, emp, comp)
                 if act in ("created", "updated"):
                     out["allowances"] += 1
             except Exception as ex:
@@ -875,6 +1047,7 @@ def deduction_save(month, loans=None, advances=None, absences=None,
 
     frappe.db.commit()
     out["errors"] = out["errors"][:10]
+    out["skipped"] = out["skipped"][:25]
     return out
 
 
@@ -1392,6 +1565,56 @@ def approve_group(month, group):
             errors.append(f"{n}: {ex}")
     frappe.db.commit()
     return {"approved": done, "errors": errors[:8]}
+
+
+@frappe.whitelist()
+def approve_all(month, limit=75):
+    """Submit every remaining DRAFT for the month, up to `limit` per call.
+
+    Deliberately batched. A full month can carry 600 drafts, and submitting
+    them in one request either times out or leaves the person watching a
+    spinner with no idea whether anything is happening. The page calls this
+    repeatedly and shows the count climbing.
+
+    Same gate as approving group by group: nobody who has left may be sat
+    on payroll, because submitting those is exactly the mistake this whole
+    board exists to catch."""
+    _require_access()
+    if "HR Manager" not in frappe.get_roles() and \
+            "System Manager" not in frappe.get_roles():
+        frappe.throw("Only HR Manager can approve", frappe.PermissionError)
+
+    m_end = _month_end(month)
+    foreign = _q(
+        """select distinct a.employee_name, a.employee
+           from `tabAdditional Salary` a
+           left join `tabEmployee` e on e.name = a.employee
+           where a.payroll_date between %(ms)s and %(d)s and a.docstatus = 0
+             and (e.name is null or e.status != 'Active')""",
+        {"ms": f"{month}-01", "d": m_end})
+    if foreign:
+        frappe.throw(
+            "Cannot approve while people who are not active staff have "
+            "drafts: "
+            + ", ".join((f.employee_name or f.employee) for f in foreign[:6])
+            + ".<br><br>Remove those drafts first.")
+
+    names = frappe.get_all(
+        "Additional Salary",
+        filters={"payroll_date": ("between", [f"{month}-01", m_end]),
+                 "docstatus": 0},
+        pluck="name", limit_page_length=cint(limit) or 75)
+    done, errors = 0, []
+    for n in names:
+        try:
+            frappe.get_doc("Additional Salary", n).submit()
+            done += 1
+        except Exception as ex:
+            errors.append(f"{n}: {ex}")
+    frappe.db.commit()
+    remaining = frappe.db.count("Additional Salary", {
+        "payroll_date": ("between", [f"{month}-01", m_end]), "docstatus": 0})
+    return {"approved": done, "remaining": remaining, "errors": errors[:8]}
 
 
 # ---------------------------------------------------------------------------
