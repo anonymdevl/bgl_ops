@@ -2,6 +2,17 @@
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.
 
+## 1.12.4 - 2026-08-28
+- Guard: Create Payroll now also refuses while new hires remain unprorated.
+  A green Review board was not enough - a joiner never entered on the
+  Pro-Ration tab has no salary assignment and would silently drop off the
+  payroll (142 instead of 149). The refusal names the pending joiners.
+
+## 1.12.3 - 2026-08-28
+- Fix (found in live E2E): run_payroll now inserts the Payroll Entry before
+  filling employees - v16's employee query silently returns nobody on an
+  unsaved document, which made click 1 fail with "No employees found".
+
 ## 1.12.2 - 2026-08-28
 - Critical fix found in pre-run QA: trip earnings arrive under their real
   components (Mixer Driver Cubic - Tema/Airport, Pump Cubic Incentive,

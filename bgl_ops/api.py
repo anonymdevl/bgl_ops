@@ -1547,6 +1547,17 @@ def run_payroll(month):
         frappe.throw("The Review board is not fully green for this month. "
                      "Approve every group (and clear warnings) first.")
 
+    # a green board is not enough if joiners were never prorated - they would
+    # have no salary assignment and silently drop off the payroll
+    hires_line = [l for l in payroll_readiness(month)["lines"]
+                  if l["key"] == "hires"]
+    if hires_line and not hires_line[0]["ok"]:
+        frappe.throw("New hires are not prorated yet: "
+                     + hires_line[0]["detail"]
+                     + ".<br>Fill the Pro-Ration tab on the Payroll Prep "
+                     "Sheet first - otherwise these joiners would be "
+                     "missing from payroll entirely.")
+
     m_start, m_end = _month_bounds(month)
     existing = _payroll_entries(month)
     if existing:
@@ -1589,6 +1600,8 @@ def run_payroll(month):
             "department": t.department,
             "designation": t.designation,
         })
+        doc.insert()          # v16 fill needs a persisted doc (name-based
+        doc.reload()          # subqueries return nothing on unsaved docs)
         doc.fill_employee_details()
         # narrated exclusions: anything not Active never belongs on payroll
         keep, excluded = [], []
