@@ -127,15 +127,13 @@ def dashboard_data(from_date=None, to_date=None, site=None):
         {"f": pm_start, "t": pm_end})
 
     encash = _q(
-        """select status, ifnull(pay_via_payment_entry,0) via_pe,
-                  count(*) cnt, ifnull(sum(encashment_days),0) days,
-                  ifnull(sum(encashment_amount),0) amt,
-                  ifnull(sum(paid_amount),0) paid
-           from `tabLeave Encashment`
-           where docstatus < 2
-             and encashment_date between %(f)s and %(t)s
-           group by status, via_pe
-           order by status""", {"f": pm_start, "t": pm_end})
+        """select status, count(*) cnt, ifnull(sum(encashed_days),0) days,
+                  ifnull(sum(encashed_amount),0) amt
+           from `tabBGL Leave Encashment`
+           where encashment_date between %(f)s and %(t)s
+           group by status
+           order by field(status,'Requested','Approved','Unpaid','Paid','Rejected')""",
+        {"f": pm_start, "t": pm_end})
 
     # Leave summary (company-wide, current allocations)
     leave = {
@@ -1105,7 +1103,6 @@ def _group_components(key):
 
 REVIEW_GROUPS = {
     "trip_earnings": {"label": "Trip Earnings", "components": ["Trips", "Cubic"]},
-    "encashments": {"label": "Leave Encashments", "components": ["Leave Encashment"]},
     "loans": {"label": "Loans", "components": ["Loans"]},
     "advances": {"label": "Salary Advances", "components": ["Salary Advance"]},
     "absences": {"label": "Absences", "components": ["Absent"]},
@@ -1160,14 +1157,6 @@ def review_board(month):
     groups["loans"]["source"] = flt(loans_src, 2)
     groups["loans"]["source_label"] = "loan ledger repayments"
 
-    # encashments vs submitted Leave Encashment documents for the month
-    enc_src = _q(
-        """select ifnull(sum(encashment_amount),0) v from `tabLeave Encashment`
-           where docstatus=1
-             and encashment_date between %(ms)s and %(d)s""",
-        {"ms": f"{month}-01", "d": m_end})[0].v
-    groups["encashments"]["source"] = flt(enc_src, 2)
-    groups["encashments"]["source_label"] = "submitted encashment documents"
 
     # advances + allowances vs last month (informational)
     for key, comps in (("advances", ["Salary Advance"]),
@@ -1292,6 +1281,11 @@ def employee_card(employee):
     return {"emp": e, "base": base, "loans": loans,
             "loan_balance": flt(sum(flt(l.balance) for l in loans), 2),
             "leave_taken": leave_taken, "recent": recent,
+            "leave_encashed": flt(_q(
+            """select ifnull(sum(encashed_days),0) v
+               from `tabBGL Leave Encashment`
+               where employee=%(e)s and status != 'Rejected'""",
+            {"e": employee})[0].v, 1),
             "trips_month": trips_month}
 
 
@@ -1376,11 +1370,18 @@ def employee_360(employee, from_date=None, to_date=None):
                  and from_date >= %(f)s and to_date <= %(t)s""",
             {"e": employee, "lt": a.leave_type,
              "f": a.from_date, "t": a.to_date})[0].v
+        enc_days = _q(
+            """select ifnull(sum(encashed_days),0) v
+               from `tabBGL Leave Encashment`
+               where employee=%(e)s and leave_type=%(lt)s
+                 and status != 'Rejected'""",
+            {"e": employee, "lt": a.leave_type})[0].v
         leave_balances.append({
             "leave_type": a.leave_type,
             "allocated": flt(a.allocated, 1),
             "taken": flt(taken, 1),
-            "remaining": flt(flt(a.allocated) - flt(taken), 1)})
+            "encashed": flt(enc_days, 1),
+            "remaining": flt(flt(a.allocated) - flt(taken) - flt(enc_days), 1)})
 
     pending_leaves = _q(
         """select name, leave_type, from_date, to_date,
@@ -1391,9 +1392,10 @@ def employee_360(employee, from_date=None, to_date=None):
 
     encashments = _q(
         """select name, leave_type, encashment_date request_date,
-                  encashment_days days, encashment_amount amount, status
-           from `tabLeave Encashment`
-           where employee=%(e)s and docstatus < 2
+                  encashed_days days, encashed_amount amount, status,
+                  ifnull(remarks,'') note
+           from `tabBGL Leave Encashment`
+           where employee=%(e)s
            order by encashment_date desc limit 20""", {"e": employee})
 
     return {
@@ -1465,10 +1467,11 @@ def leave_roster(site=None):
                             and ap.leave_type=la.leave_type
                             and ap.from_date >= la.from_date
                             and ap.to_date <= la.to_date),0) taken,
-                  ifnull((select sum(le.encashment_days)
-                          from `tabLeave Encashment` le
-                          where le.employee=la.employee and le.docstatus=1
-                            and le.leave_type=la.leave_type),0) encashed
+                  ifnull((select sum(le.encashed_days)
+                          from `tabBGL Leave Encashment` le
+                          where le.employee=la.employee
+                            and le.leave_type=la.leave_type
+                            and le.status != 'Rejected'),0) encashed
            from `tabLeave Allocation` la
            inner join `tabEmployee` e on e.name=la.employee
            where la.docstatus=1 and e.status='Active'

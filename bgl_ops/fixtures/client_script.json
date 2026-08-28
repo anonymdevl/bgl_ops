@@ -14,13 +14,5 @@
   "view": "Form",
   "enabled": 1,
   "script": "frappe.ui.form.on('Staff Loan Advance', {\n  refresh: function(frm){ recompute(frm); },\n  validate: function(frm){ recompute(frm); },\n  principal: function(frm){ recompute(frm); }\n});\nfrappe.ui.form.on('Staff Loan Repayment', {\n  amount: function(frm){ recompute(frm); },\n  repayments_remove: function(frm){ recompute(frm); }\n});\nfunction recompute(frm){\n  var t=0;\n  (frm.doc.repayments||[]).forEach(function(r){ t+=(r.amount||0); });\n  frm.set_value('total_repaid', t);\n  var bal=(frm.doc.principal||0)-t;\n  frm.set_value('balance', bal);\n  if(frm.doc.status!=='Written Off' && frm.doc.status!=='Cancelled'){\n    frm.set_value('status', (bal<=0.001) ? 'Fully Paid' : 'Active');\n  }\n}"
- },
- {
-  "doctype": "Client Script",
-  "name": "Leave Encashment - Date Guidance",
-  "dt": "Leave Encashment",
-  "view": "Form",
-  "enabled": 1,
-  "script": "// BGL - Leave Encashment: explain the date rule while HR is filling the form.\nfrappe.ui.form.on(\"Leave Encashment\", {\n    refresh(frm) {\n        if (frm.doc.docstatus === 0) {\n            frm.set_intro(\n                \"The <b>Encashment Date</b> decides which payroll pays this. \" +\n                \"It must fall inside the period you will run Payroll Entry for - \" +\n                \"normally the last day of the current month. \" +\n                \"If the employee is taking the cash now instead, tick \" +\n                \"<b>Pay Via Payment Entry</b> and it is paid outside payroll.\",\n                \"blue\"\n            );\n        }\n    },\n    encashment_date(frm) {\n        if (!frm.doc.encashment_date || frm.doc.pay_via_payment_entry) return;\n        const d = frappe.datetime.str_to_obj(frm.doc.encashment_date);\n        const month = d.toLocaleString(\"en\", { month: \"long\", year: \"numeric\" });\n        frappe.show_alert({\n            message: \"Will be paid with \" + month + \" payroll\",\n            indicator: \"blue\",\n        }, 5);\n    },\n});\n"
  }
 ]

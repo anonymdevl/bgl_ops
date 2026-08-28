@@ -2,6 +2,36 @@
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.
 
+## 1.13.0 - 2026-08-28
+- Encashment redesigned per HR (Alexandra): OUT of payroll entirely.
+  - New "BGL Leave Encashment" record: employee, date, encashed days,
+    encashed amount (typed by HR - the system no longer computes or pays
+    it), status Not Paid / Paid, remarks. Quick-entry, HR-owned.
+  - Every surface repointed: Command Center pipeline (amber Not Paid /
+    green Paid), all-staff leave roster, Employee 360 (new Encashed
+    column; remaining = allocated - taken - encashed), number card,
+    workspace links, Payroll Guide, and the printed Leave Application
+    form's "days remaining" figure.
+  - Review board's Leave Encashments group removed - encashment no longer
+    reaches Additional Salary or salary slips.
+  - Retired the stock-encashment automation (valuation script, date guard,
+    form guidance) from fixtures.
+
+- Status widened to five per HR: Requested / Approved / Paid / Unpaid /
+  Rejected (colour-coded everywhere). Rejected never reduces the balance;
+  every other status does. Pending money = Requested + Approved + Unpaid.
+- Manager visibility completed: Employee Hub card now shows "Leave encashed"
+  beside leave taken, so 18 = taken + encashed + remaining is visible from
+  the hub, the roster, Employee 360, the Leave Balance Board and the printed
+  form alike.
+
+- Extra integration fields (approved): department (auto-fetched, for
+  filtering and reports), payment date (required once Paid) and payment
+  reference - so "what left the company and when" is answerable without
+  leaving the record.
+- Leave Balance Board report repointed: Encash Not Paid / Encash Paid
+  columns from the new record; Remaining = entitled - taken - ALL encashed.
+
 ## 1.12.4 - 2026-08-28
 - Guard: Create Payroll now also refuses while new hires remain unprorated.
   A green Review board was not enough - a joiner never entered on the

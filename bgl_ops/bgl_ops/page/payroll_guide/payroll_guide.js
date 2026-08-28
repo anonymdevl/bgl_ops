@@ -19,13 +19,10 @@ frappe.pages['payroll-guide'].on_page_load = function(wrapper) {
 		'so Thursday to Monday costs 3 days, not 5. Casual (3) and Sick (5) work the same way.<ol>'+
 		'<li><b>Applying:</b> HR raises a Leave Application on the employee\'s behalf, sets the approver, '+
 		'approves and submits. Attendance marks itself On Leave for the working days and the balance updates instantly.</li>'+
-		'<li><b>Encashment (leave sold back for cash):</b> open a <b>Leave Encashment</b>. The amount computes '+
-		'itself: monthly basic &divide; 22 &times; days. Two ways to pay:<br>'+
-		'&bull; <b>With payroll</b> (normal): the Encashment Date decides WHICH month pays it - it must fall inside '+
-		'a payroll period you have not run yet. Use the last day of the current month. The system blocks dates in '+
-		'months already run.<br>'+
-		'&bull; <b>Cash now</b>: tick <b>Pay Via Payment Entry</b> and settle it from the bank today - it never '+
-		'touches a payslip.</li>'+
+		'<li><b>Encashment (leave exchanged for money):</b> HR records it on <b>BGL Leave Encashment</b> - '+
+		'employee, date, days, and the AMOUNT AS HR COMPUTES IT (the system does not calculate or pay it; '+
+		'payment happens outside payroll). Mark the record <b>Paid</b> once the money is given. '+
+		'Encashed days come off the leave balance immediately: remaining = entitled - taken - encashed.</li>'+
 		'<li><b>Watching it:</b> the Command Center Leave tab shows Who\'s Out, every employee\'s balance, and the '+
 		'encashment pipeline tagged PAYROLL or CASH so you always know how money is leaving.</li></ol>'+
 		'Encashment entries also appear on the Review &amp; Approve board under <b>Leave Encashments</b> before payroll runs.'],

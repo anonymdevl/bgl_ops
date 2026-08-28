@@ -21,13 +21,12 @@ fixtures = [
     {"dt": "Custom HTML Block", "filters": [["name", "in", ["BGL Payroll Cockpit", "BGL Executive Deck"]]]},
     {"dt": "Role", "filters": [["name", "in", ["Command Center Viewer"]]]},
     {"dt": "DocType", "filters": [["name", "in", [
-        "Daily Trip Log", "BGL Trip Rate", "BGL Vehicle",
+        "Daily Trip Log", "BGL Trip Rate", "BGL Vehicle", "BGL Leave Encashment",
         "Staff Loan Advance", "Staff Loan Repayment",
     ]]]},
     {"dt": "Server Script", "filters": [["name", "in", [
-        "bgl_auto_leave_anniversary", "bgl_leave_encashment_amount",
-        "bgl_leave_status_after_submit", "bgl_leave_status_after_cancel",
-        "bgl_leave_status_sync", "bgl_encashment_date_guard",
+        "bgl_auto_leave_anniversary", "bgl_leave_status_after_submit", "bgl_leave_status_after_cancel",
+        "bgl_leave_status_sync",
     ]]]},
     # All site-specific custom fields (app-generated hrms/erpnext fields excluded)
     {"dt": "Custom Field", "filters": [["name", "in", [
@@ -58,7 +57,6 @@ fixtures = [
     {"dt": "Client Script", "filters": [["name", "in", [
         "Daily Trip Log - Auto Cost",
         "Staff Loan Advance - Balance",
-        "Leave Encashment - Date Guidance",
     ]]]},
     {"dt": "Report", "filters": [["name", "in", [
         "BGL Trip Costing", "BGL Trips - Yesterday", "BGL Leave Balance Board",

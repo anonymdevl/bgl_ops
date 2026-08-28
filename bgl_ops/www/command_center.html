@@ -555,13 +555,13 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
         <div class="note"><b>Liability lens:</b> unused entitled days are a real cash liability. The full per-employee breakdown lives in the Leave Balance Board.</div>
       </div>
       <div class="panel">
-        <h3>Encashment pipeline</h3><p class="cap">Leave days staff are cashing out - each row shows whether it pays with <b>payroll</b> or as <b>cash</b> via Payment Entry</p>
+        <h3>Encashment pipeline</h3><p class="cap">Recorded by HR with their own amounts - paid outside payroll. Amber and blue rows are still owed to the employee; Rejected never touches the balance.</p>
         <div class="twrap"><table>
-          <thead><tr><th>Stage</th><th class="r">Requests</th><th class="r">Days</th><th class="r">GHS</th></tr></thead>
+          <thead><tr><th>Status</th><th class="r">Requests</th><th class="r">Days</th><th class="r">GHS</th></tr></thead>
           <tbody id="encbody"><tr><td colspan="4" class="empty">No leave encashments recorded yet.</td></tr></tbody>
         </table></div>
         <div class="links" style="margin-top:12px">
-          <a href="/app/leave-encashment/new" target="_blank">+ New leave encashment</a>
+          <a href="/app/bgl-leave-encashment/new" target="_blank">+ Record encashment</a>
           <a href="/app/query-report/BGL Leave Balance Board" target="_blank">Leave Balance Board</a>
           <a href="/app/leave-application" target="_blank">Leave applications</a>
         </div>
@@ -588,7 +588,7 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
       <a href="/app/query-report/BGL Trip Costing">Trip costing</a>
       <a href="/app/staff-loan-advance">Loans &amp; advances</a>
       <a href="/app/query-report/BGL Leave Balance Board">Leave board</a>
-      <a href="/app/leave-encashment">Encash requests</a>
+      <a href="/app/bgl-leave-encashment">Encash requests</a>
       <a href="/app/bgl-vehicle">Vehicle List</a>
       <a href="/app/bgl-operations">Full workspace</a>
     </div>
@@ -738,7 +738,7 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
     setHref('card-ent', listUrl('leave-allocation', {docstatus:'1'}));
     setHref('card-taken', listUrl('leave-application', {status:'Approved', docstatus:'1'}));
     setHref('card-pend', listUrl('leave-application', {status:'Open'}));
-    setHref('card-enc', listUrl('leave-encashment', {docstatus:'0'}));
+    setHref('card-enc', listUrl('bgl-leave-encashment', {status:'Requested'}));
   }
   el('f-preset').addEventListener('change', function(){
     var c=this.value==='custom';
@@ -787,7 +787,7 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
       // signals
       var dot=function(c){ return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--'+c+');margin-right:9px;vertical-align:1px"></span>'; };
       var ledgerBal=0,ledgerCnt=0;(d.active_loans||[]).forEach(function(r){ledgerBal+=r.balance;ledgerCnt+=r.cnt;});
-      var encReq=0,encDays=0;(d.encash||[]).forEach(function(r){ if(r.status==='Draft'||r.status==='Unpaid'){encReq+=r.cnt;encDays+=r.days;} });
+      var encReq=0,encDays=0;(d.encash||[]).forEach(function(r){ if(r.status!=='Paid'&&r.status!=='Rejected'){encReq+=r.cnt;encDays+=r.days;} });
       el('signals').innerHTML =
         '<tr><td>'+dot('amber')+'Money owed (payroll recovery)</td><td class="r"><b>GHS '+fmt(loanAmt+advAmt)+'</b>/mo</td></tr>'+
         '<tr><td>'+dot('bad')+'Advances outstanding</td><td class="r">'+advStaff+' staff</td></tr>'+
@@ -865,19 +865,9 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
         '<div class="bar"><span class="nm">Taken</span><span class="t"><span class="f" style="width:'+Math.min(100,Math.round(d.leave.taken/ent*100))+'%;background:linear-gradient(90deg,var(--teal),#6fd6dd)"></span></span><span class="v">'+fmt(d.leave.taken)+'</span></div>'+
         '<div class="bar"><span class="nm">Remaining</span><span class="t"><span class="f" style="width:'+Math.min(100,Math.round(Math.max(0,ent-d.leave.taken)/ent*100))+'%;background:linear-gradient(90deg,var(--good),#79dcab)"></span></span><span class="v">'+fmt(Math.max(0,ent-d.leave.taken))+'</span></div>';
       if((d.encash||[]).length){
-        function encStage(r){
-          var pe = +r.via_pe === 1;
-          if(r.status==='Draft') return ['Requested - awaiting HR approval', pe?'cash':'payroll'];
-          if(r.status==='Unpaid'||r.status==='Submitted')
-            return [pe? 'Approved - awaiting cash payment (Payment Entry)'
-                      : 'Approved - pays with next payroll', pe?'cash':'payroll'];
-          if(r.status==='Paid') return [pe? 'Paid in cash (Payment Entry)' : 'Paid with payroll', pe?'cash':'payroll'];
-          return [r.status, pe?'cash':'payroll'];
-        }
+        var ENCC={'Paid':'var(--good,#2fb56f)','Rejected':'var(--bad,#e8776b)','Approved':'var(--teal,#3fc1cb)'};
         el('encbody').innerHTML=d.encash.map(function(r){
-          var st=encStage(r), paid=r.status==='Paid';
-          var tag='<span class="tag '+(st[1]==='cash'?'t-info':'t-ok')+'" style="margin-left:8px">'+(st[1]==='cash'?'CASH':'PAYROLL')+'</span>';
-          return '<tr><td'+(paid?' style="color:var(--good,#2fb56f)"':'')+'>'+esc(st[0])+tag+'</td>'+
+          return '<tr><td style="color:'+(ENCC[r.status]||'var(--amber,#f0a04b)')+';font-weight:700">'+esc(r.status)+'</td>'+
             '<td class="r">'+r.cnt+'</td><td class="r">'+fmt(r.days)+'</td><td class="r">'+fmt(r.amt)+'</td></tr>'; }).join('');
       }
     });
@@ -1520,7 +1510,7 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
           [['From','start_date'],['To','end_date'],['Gross','gross_pay',1,1],['Deductions','total_deduction',1,1],['Net','net_pay',1,1]]);
         h+='<div class="grid2" style="margin-top:12px">'+
           table('Leave balance (as of today)', d.leave_balances||[],
-            [['Type','leave_type'],['Allocated','allocated',1],['Taken','taken',1],['Days left','remaining',1]])+
+            [['Type','leave_type'],['Allocated','allocated',1],['Taken','taken',1],['Encashed','encashed',1],['Days left','remaining',1]])+
           table('Pending leave requests', d.pending_leaves||[],
             [['Type','leave_type'],['From','from_date'],['To','to_date'],['Days','days',1],['Status','status']])+
           '</div>';
