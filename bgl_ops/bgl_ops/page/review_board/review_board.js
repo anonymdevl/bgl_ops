@@ -39,6 +39,22 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 		.rvb-go{display:none;margin:16px 0;text-align:center}\
 		.rvb-go a{display:inline-block;background:var(--green-600);color:#fff;font-weight:800;\
 			padding:12px 30px;border-radius:12px;text-decoration:none;font-size:14.5px}\
+		.rvb-prog{margin:14px auto;max-width:560px;text-align:center}\
+		.rvb-prog .num{font-size:34px;font-weight:800;letter-spacing:-.01em}\
+		.rvb-prog .num small{font-size:15px;color:var(--text-muted);font-weight:600}\
+		.rvb-rail{position:relative;height:10px;border-radius:100px;background:var(--border-color);\
+			overflow:hidden;margin:10px 0 8px}\
+		.rvb-fill{position:absolute;left:0;top:0;bottom:0;border-radius:100px;\
+			background:linear-gradient(90deg,#2fb56f,#f0a04b);transition:width .8s cubic-bezier(.4,0,.2,1)}\
+		.rvb-fill:after{content:"";position:absolute;top:0;bottom:0;right:0;width:46px;\
+			background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent);\
+			animation:rvbspark 1.4s linear infinite}\
+		@keyframes rvbspark{0%{transform:translateX(-46px)}100%{transform:translateX(46px)}}\
+		.rvb-stage{font-size:12.5px;color:var(--text-muted);animation:rvbbreath 2.4s ease-in-out infinite}\
+		@keyframes rvbbreath{0%,100%{opacity:.55}50%{opacity:1}}\
+		.rvb-donepulse{animation:rvbpop .5s ease}\
+		@keyframes rvbpop{0%{transform:scale(.96);opacity:.4}100%{transform:scale(1);opacity:1}}\
+		.rvb-names{font-size:11.5px;color:var(--text-muted);min-height:16px;margin-top:2px}\
 	</style>').appendTo(body);
 	var holder = $('<div></div>').appendTo(body);
 	holder.html('<p class="text-muted" style="padding:14px">Pick a month and Load.</p>');
@@ -93,9 +109,9 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 				(g.drafts ? '<button class="btn btn-sm btn-primary rvb-approve" data-g="' + key + '" style="margin-top:10px">Approve ' + g.drafts + ' draft(s)</button>' : '') +
 				'</div></div>';
 		});
-		h += '<div class="rvb-go" ' + (d.ready ? 'style="display:block"' : '') + '>' +
-			'<a href="/app/payroll-entry/new">All green - Proceed to Payroll Entry &rarr;</a></div>';
+		h += '<div id="rvb-pay"></div>';
 		holder.html(h);
+		render_payzone();
 		holder.find('.rvb-h').on('click', function() { $(this).parent().toggleClass('open'); });
 		holder.find('.rvb-approve').on('click', function(e) {
 			e.stopPropagation();
@@ -112,6 +128,112 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 						}
 					});
 				});
+		});
+	}
+
+	var payTimer = null;
+	function render_payzone() {
+		if (payTimer) { clearTimeout(payTimer); payTimer = null; }
+		var d = state.data;
+		var box = holder.find('#rvb-pay');
+		frappe.call({ method: 'bgl_ops.api.payroll_status', args: { month: state.month } }).then(function(r) {
+			var st = r.message || {};
+			var h = '';
+			function btn(id, label, green) {
+				return '<div style="text-align:center;margin:16px 0"><button id="' + id + '" class="btn ' +
+					(green ? 'btn-success' : 'btn-default') + '" style="font-weight:800;padding:10px 30px">' + label + '</button></div>';
+			}
+			if (st.phase === 'none') {
+				if (d.ready) {
+					h += '<div class="rvb-warn" style="border-color:var(--green-600);background:rgba(47,181,111,.07);color:var(--text-color)">' +
+						'<b>All green.</b> One click creates the Payroll Entry exactly like last month (same accounts, cost centre, bank), ' +
+						'dated ' + d.month_end + ', every active employee included and any leaver excluded by name - then drafts every salary slip for checking.</div>' +
+						btn('rvb-run', 'Create Payroll (draft slips)', true);
+				}
+			} else {
+				h += '<div class="rvb-warn" style="border-color:var(--border-color);background:var(--fg-color);color:var(--text-color)">' +
+					'<b>Payroll ' + (st.entries || []).map(function(e) { return e.name; }).join(', ') + '</b> - slips: ' +
+					st.created + ' of ' + st.expected + ' created' +
+					(st.submitted ? ', ' + st.submitted + ' submitted' : '') + '.';
+				if ((st.recon || []).length) {
+					h += '<table class="rvb-t" style="margin-top:8px"><tr><th class="l">Group</th><th>Board</th><th>Slips</th><th class="l">Match</th></tr>';
+					st.recon.forEach(function(x) {
+						h += '<tr><td class="l">' + x.group + '</td><td>' + format_number(x.board, null, 2) + '</td><td>' +
+							format_number(x.slips, null, 2) + '</td><td class="l">' +
+							(x.ok ? '<span style="color:var(--green-600);font-weight:700">&#10003;</span>'
+								: '<span style="color:var(--red-500);font-weight:700">DIFFERS</span>') + '</td></tr>';
+					});
+					h += '</table>';
+				}
+				if ((st.anomalies || []).length) {
+					h += '<div style="margin-top:8px;color:var(--red-500)"><b>Read before submitting:</b><br>' +
+						st.anomalies.slice(0, 15).join('<br>') + '</div>';
+				}
+				h += '</div>';
+				if (st.phase === 'creating') {
+					var pct = st.expected ? Math.min(100, Math.round(st.created * 100 / st.expected)) : 0;
+					var stages = ['Reading salary structures...', 'Applying trips and cubic...',
+						'Applying loans, advances and absences...', 'Working out SSNIT and PAYE...',
+						'Writing salary slips...'];
+					h += '<div class="rvb-prog">' +
+						'<div class="num" id="rvb-count">' + st.created + '<small> / ' + st.expected + ' slips</small></div>' +
+						'<div class="rvb-rail"><div class="rvb-fill" style="width:' + pct + '%"></div></div>' +
+						'<div class="rvb-stage">' + stages[Math.floor(Date.now() / 3000) % stages.length] + '</div>' +
+						'<div class="rvb-names" id="rvb-lastname"></div></div>';
+					payTimer = setTimeout(render_payzone, 2500);
+				}
+				if (st.phase === 'drafts_ready') {
+					var clean = !(st.anomalies || []).length && st.recon_ok;
+					h += btn('rvb-submit', clean ? 'Submit all salary slips' : 'Submit anyway (I have read the notes above)', clean);
+				}
+				if (st.phase === 'submitted') {
+					h += '<div class="rvb-warn" style="border-color:var(--green-600);background:rgba(47,181,111,.07);color:var(--text-color)">' +
+						'<b>Payroll submitted.</b> ' + st.submitted + ' slips are live. Bank entry is made from the Payroll Entry as usual.</div>';
+				}
+				if (st.submitted && st.submitted < st.expected && st.phase !== 'drafts_ready') {
+					payTimer = setTimeout(render_payzone, 5000);
+				}
+			}
+			box.html(h);
+			if (st.phase === 'creating' && st.created > 0) {
+				frappe.call({ method: 'frappe.client.get_list', args: {
+					doctype: 'Salary Slip', filters: { payroll_entry: ['in', (st.entries || []).map(function(e) { return e.name; })] },
+					fields: ['employee_name'], order_by: 'creation desc', limit_page_length: 1 } }).then(function(q) {
+					var rows = (q.message || []);
+					if (rows.length) box.find('#rvb-lastname').text('just written: ' + rows[0].employee_name);
+				});
+			}
+			if (st.phase === 'drafts_ready' && !box.data('celebrated')) {
+				box.data('celebrated', 1);
+				box.children().first().addClass('rvb-donepulse');
+				frappe.show_alert({ message: 'All ' + st.created + ' slips drafted - run the final check below.', indicator: 'green' }, 6);
+			}
+			if (st.phase === 'submitted' && !box.data('cheered')) {
+				box.data('cheered', 1);
+				frappe.show_alert({ message: 'Payroll submitted. ' + st.submitted + ' people are getting paid.', indicator: 'green' }, 8);
+			}
+			box.find('#rvb-run').on('click', function() {
+				frappe.confirm('Create the ' + state.month + ' Payroll Entry now? Settings copy from last month; every salary slip is created as a DRAFT for the final check.', function() {
+					frappe.call({ method: 'bgl_ops.api.run_payroll', args: { month: state.month }, freeze: true,
+						freeze_message: 'Creating payroll...',
+						callback: function(rr) {
+							var m = rr.message || {};
+							if ((m.excluded || []).length) frappe.msgprint({ title: 'Excluded from payroll', message: m.excluded.join('<br>') });
+							render_payzone();
+						} });
+				});
+			});
+			box.find('#rvb-submit').on('click', function() {
+				var clean = !(st.anomalies || []).length && st.recon_ok;
+				frappe.confirm(clean ?
+					'Submit ALL ' + st.created + ' salary slips? This is the final commit - money becomes payable.' :
+					'There are unresolved notes above. Submit ALL slips anyway?', function() {
+					frappe.call({ method: 'bgl_ops.api.submit_payroll',
+						args: { month: state.month, confirm: clean ? 0 : 1 }, freeze: true,
+						freeze_message: 'Submitting slips...',
+						callback: function() { render_payzone(); } });
+				});
+			});
 		});
 	}
 };

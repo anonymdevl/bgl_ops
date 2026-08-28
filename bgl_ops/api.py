@@ -2,7 +2,7 @@ import json
 import calendar
 
 import frappe
-from frappe.utils import add_days, flt, get_first_day, getdate, today
+from frappe.utils import add_days, cint, flt, get_first_day, getdate, today
 
 PAY_GROUPS = [
     "Mixer Driver", "Pump Driver", "Pump Operator",
@@ -489,6 +489,23 @@ def deduction_sheet(month):
              and salary_component in %(comps)s""",
         {"d": m_end, "comps": DEDUCT_COMPONENTS})
 
+    # Current basic (latest submitted SSA) per active employee - the
+    # "Basic Salaries" review tab. Sarah's team corrects wrong ones here.
+    basics = _q(
+        """select ssa.name ssa_name, ssa.employee, e.employee_name, e.branch,
+                  ssa.base, ssa.from_date, ssa.salary_structure
+           from `tabSalary Structure Assignment` ssa
+           inner join `tabEmployee` e on e.name = ssa.employee
+           inner join (select employee, max(from_date) mx
+                       from `tabSalary Structure Assignment`
+                       where docstatus=1 group by employee) t
+             on t.employee = ssa.employee and t.mx = ssa.from_date
+           where ssa.docstatus=1 and e.status='Active'
+           order by e.employee_name, ssa.creation desc""")
+    seen_emp = set()
+    basics = [b for b in basics
+              if not (b.employee in seen_emp or seen_emp.add(b.employee))]
+
     # Last month's submitted advances = this month's pre-fill
     prev_adv = _q(
         """select employee, employee_name, amount
@@ -564,6 +581,7 @@ def deduction_sheet(month):
                  for e in _q("select name, designation from `tabEmployee` where status='Active'")}
 
     return {"month": month, "month_end": m_end, "prev_month_end": prev_end,
+            "basics": basics,
             "loans": loans, "drafts": drafts, "prev_advances": prev_adv,
             "employees": employees,
             "bases": base_map,
@@ -609,7 +627,7 @@ def _upsert_deduction_draft(employee, component, amount, m_end, remark,
 
 @frappe.whitelist()
 def deduction_save(month, loans=None, advances=None, absences=None,
-                   new_hires=None, allowances=None):
+                   new_hires=None, allowances=None, basics=None):
     """Save the Monthly Deduction Sheet.
 
     loans:    [{loan, amount}]        -> ledger repayment + draft 'Loans'
@@ -630,13 +648,15 @@ def deduction_save(month, loans=None, advances=None, absences=None,
     absences = json.loads(absences) if isinstance(absences, str) else (absences or [])
     new_hires = json.loads(new_hires) if isinstance(new_hires, str) else (new_hires or [])
     allowances = json.loads(allowances) if isinstance(allowances, str) else (allowances or [])
+    basics = json.loads(basics) if isinstance(basics, str) else (basics or [])
 
     m_end = _month_end(month)
     year, mon = int(month[:4]), int(month[5:7])
     month_label = f"{calendar.month_name[mon]} {year}"
     ref = f"PAYROLL-{month}"
     out = {"loans": 0, "advances": 0, "absences": 0, "new_hires": 0,
-           "allowances": 0, "ssa_created": [], "cleared": [], "errors": []}
+           "allowances": 0, "ssa_created": [], "cleared": [], "errors": [],
+           "basics_changed": [], }
 
     for row in loans:
         try:
@@ -735,7 +755,11 @@ def deduction_save(month, loans=None, advances=None, absences=None,
                 overwrite=1)
             if act in ("created", "updated"):
                 out["new_hires"] += 1
-            # SSA at FULL basic from the 1st of next month, if none exists
+            # SSA at FULL basic from the JOINING DATE, if none exists.
+            # The proration draft (overwrite) trims month one to days/22;
+            # every later month pays full automatically. Dating it next month
+            # would leave THIS month with no assignment - employee silently
+            # skipped by Payroll Entry.
             has_ssa = frappe.db.exists(
                 "Salary Structure Assignment",
                 {"employee": emp, "docstatus": 1})
@@ -756,16 +780,66 @@ def deduction_save(month, loans=None, advances=None, absences=None,
                         or frappe.db.get_value("Employee", emp, "company"),
                     "currency": t.get("currency") or "GHS",
                     "payroll_payable_account": t.get("payroll_payable_account"),
-                    "from_date": nxt_start,
+                    "from_date": frappe.db.get_value(
+                        "Employee", emp, "date_of_joining") or nxt_start,
                     "base": actual,
                 })
                 ssa.insert()
                 ssa.submit()
                 out["ssa_created"].append(
                     f"{frappe.db.get_value('Employee', emp, 'employee_name')}"
-                    f" (base {flt(actual, 2)} from {nxt_start})")
+                    f" (base {flt(actual, 2)} from {ssa.from_date})")
         except Exception as ex:
             out["errors"].append(f"New hire {row.get('employee')}: {ex}")
+
+    # ---- Basic salary corrections: NEW SSA effective 1st of this month ----
+    m_start = f"{month}-01"
+    for row in basics:
+        try:
+            emp = row.get("employee")
+            new_base = flt(row.get("new_base") or 0)
+            if new_base <= 0:
+                continue
+            cur = _q(
+                """select name, base, salary_structure, income_tax_slab,
+                          company, currency, payroll_payable_account
+                   from `tabSalary Structure Assignment`
+                   where employee=%(e)s and docstatus=1
+                   order by from_date desc limit 1""", {"e": emp})
+            if not cur:
+                out["errors"].append(
+                    f"Basic change {emp}: no existing salary assignment")
+                continue
+            cur = cur[0]
+            if abs(flt(cur.base) - new_base) < 0.005:
+                continue
+            clash = frappe.db.get_value(
+                "Salary Structure Assignment",
+                {"employee": emp, "docstatus": 1, "from_date": m_start},
+                "name")
+            if clash:
+                out["errors"].append(
+                    f"Basic change {emp}: {clash} already starts {m_start} - "
+                    "cancel it first, then save again")
+                continue
+            ssa = frappe.get_doc({
+                "doctype": "Salary Structure Assignment",
+                "employee": emp,
+                "salary_structure": cur.salary_structure,
+                "income_tax_slab": cur.income_tax_slab,
+                "company": cur.company,
+                "currency": cur.currency or "GHS",
+                "payroll_payable_account": cur.payroll_payable_account,
+                "from_date": m_start,
+                "base": new_base,
+            })
+            ssa.insert()
+            ssa.submit()
+            out["basics_changed"].append(
+                f"{frappe.db.get_value('Employee', emp, 'employee_name')}: "
+                f"{flt(cur.base, 2)} -> {flt(new_base, 2)} from {m_start}")
+        except Exception as ex:
+            out["errors"].append(f"Basic change {row.get('employee')}: {ex}")
 
     # ---- Fixed allowances & overtime: carry-forward uploads ----
     ALLOW_MAP = {"housing": "Housing Allowance", "transport": "Transport Allowance",
@@ -1130,7 +1204,7 @@ def approve_group(month, group):
         frappe.throw(f"Unknown group {group}")
     m_end = _month_end(month)
     names = frappe.get_all("Additional Salary", filters={
-        "payroll_date": m_end, "docstatus": 0,
+        "payroll_date": ("between", [f"{month}-01", m_end]), "docstatus": 0,
         "salary_component": ("in", g["components"])}, pluck="name")
     done, errors = 0, []
     for n in names:
@@ -1423,3 +1497,222 @@ def recovery_history():
            group by month, salary_component
            order by month desc, salary_component""", {"d": today()})
     return {"rows": rows}
+
+
+# ---------------------------------------------------------------------------
+# Two green clicks: automated Payroll Entry + guarded slip submission
+# ---------------------------------------------------------------------------
+
+def _month_bounds(month):
+    return f"{month}-01", _month_end(month)
+
+def _payroll_entries(month):
+    m_start, m_end = _month_bounds(month)
+    return _q(
+        """select name, docstatus, start_date, end_date, number_of_employees,
+                  branch, department, designation
+           from `tabPayroll Entry`
+           where start_date=%(f)s and end_date=%(t)s and docstatus < 2
+           order by creation""", {"f": m_start, "t": m_end})
+
+
+@frappe.whitelist()
+def run_payroll(month):
+    """Green click 1: create + submit Payroll Entry(ies) for the month,
+    copying every repeating field from the previous month's entries.
+    Only allowed when the Review board is fully green. Slip creation is
+    ERPNext's own on-submit behaviour (enqueued for large companies)."""
+    _require_access()
+    if "HR Manager" not in frappe.get_roles() and \
+            "System Manager" not in frappe.get_roles():
+        frappe.throw("Only HR Manager can run payroll", frappe.PermissionError)
+
+    board = review_board(month)
+    if not board.get("ready"):
+        frappe.throw("The Review board is not fully green for this month. "
+                     "Approve every group (and clear warnings) first.")
+
+    m_start, m_end = _month_bounds(month)
+    existing = _payroll_entries(month)
+    if existing:
+        return {"created": [], "existing": [e.name for e in existing],
+                "note": "Payroll Entry already exists for this month."}
+
+    # template(s): the previous month's submitted entries (handles both one
+    # combined run and per-branch runs - we replicate whatever they did last)
+    templates = _q(
+        """select name, company, payroll_frequency, currency, exchange_rate,
+                  payroll_payable_account, cost_center, project,
+                  payment_account, bank_account, branch, department,
+                  designation
+           from `tabPayroll Entry`
+           where docstatus=1 and end_date < %(f)s
+             and end_date = (select max(end_date) from `tabPayroll Entry`
+                             where docstatus=1 and end_date < %(f)s)
+           order by creation""", {"f": m_start})
+    if not templates:
+        frappe.throw("No previous submitted Payroll Entry found to copy "
+                     "settings from. Run the first month manually.")
+
+    created, excluded_all = [], []
+    for t in templates:
+        doc = frappe.get_doc({
+            "doctype": "Payroll Entry",
+            "company": t.company,
+            "posting_date": m_end,
+            "payroll_frequency": t.payroll_frequency or "Monthly",
+            "start_date": m_start,
+            "end_date": m_end,
+            "currency": t.currency,
+            "exchange_rate": t.exchange_rate or 1,
+            "payroll_payable_account": t.payroll_payable_account,
+            "cost_center": t.cost_center,
+            "project": t.project,
+            "payment_account": t.payment_account,
+            "bank_account": t.bank_account,
+            "branch": t.branch,
+            "department": t.department,
+            "designation": t.designation,
+        })
+        doc.fill_employee_details()
+        # narrated exclusions: anything not Active never belongs on payroll
+        keep, excluded = [], []
+        for row in doc.employees:
+            st = frappe.db.get_value("Employee", row.employee, "status")
+            if st == "Active":
+                keep.append(row)
+            else:
+                excluded.append(f"{row.employee_name} ({st})")
+        doc.employees = []
+        for row in keep:
+            doc.append("employees", {"employee": row.employee,
+                                     "employee_name": row.employee_name,
+                                     "department": row.department,
+                                     "designation": row.designation})
+        doc.number_of_employees = len(doc.employees)
+        if not doc.employees:
+            continue
+        doc.save()
+        doc.submit()   # ERPNext creates DRAFT salary slips (queued if many)
+        created.append(doc.name)
+        excluded_all += excluded
+    frappe.db.commit()
+    return {"created": created, "existing": [],
+            "excluded": excluded_all,
+            "expected_slips": sum(
+                cint(frappe.db.get_value("Payroll Entry", n,
+                                         "number_of_employees"))
+                for n in created)}
+
+
+@frappe.whitelist()
+def payroll_status(month):
+    """Progress + machine reconciliation for the month's payroll entries.
+    Verdict feeds the second green click."""
+    _require_access()
+    m_start, m_end = _month_bounds(month)
+    entries = _payroll_entries(month)
+    if not entries:
+        return {"entries": [], "phase": "none"}
+
+    names = [e.name for e in entries]
+    expected = sum(cint(e.number_of_employees) for e in entries)
+    slips = _q(
+        """select name, employee, employee_name, docstatus, net_pay, gross_pay
+           from `tabSalary Slip`
+           where payroll_entry in %(pe)s and docstatus < 2""",
+        {"pe": names})
+    drafts = [x for x in slips if x.docstatus == 0]
+    submitted = [x for x in slips if x.docstatus == 1]
+
+    # --- reconciliation: board group totals vs slip component sums ---
+    recon = []
+    if slips:
+        comp_sums = _q(
+            """select sd.salary_component, ifnull(sum(sd.amount),0) amt
+               from `tabSalary Detail` sd
+               inner join `tabSalary Slip` ss on ss.name = sd.parent
+               where ss.payroll_entry in %(pe)s and ss.docstatus < 2
+                 and ifnull(sd.amount,0) != 0
+               group by sd.salary_component""", {"pe": names})
+        cmap = {c.salary_component: flt(c.amt) for c in comp_sums}
+        board = review_board(month)
+        for key, g in board["groups"].items():
+            if not g["rows"]:
+                continue
+            slip_total = flt(sum(cmap.get(c, 0)
+                                 for c in REVIEW_GROUPS[key]["components"]), 2)
+            recon.append({"group": g["label"], "board": g["total"],
+                          "slips": slip_total,
+                          "ok": abs(slip_total - flt(g["total"])) < 0.05})
+
+    # --- anomalies ---
+    anomalies = []
+    slip_emps = {x.employee for x in slips}
+    owed = _q(
+        """select distinct employee, employee_name from `tabAdditional Salary`
+           where docstatus=1 and disabled=0
+             and payroll_date between %(f)s and %(t)s""",
+        {"f": m_start, "t": m_end})
+    for o in owed:
+        if o.employee not in slip_emps:
+            anomalies.append(f"{o.employee_name}: has approved payroll "
+                             "entries but NO salary slip")
+    for x in slips:
+        if flt(x.net_pay) <= 0:
+            anomalies.append(f"{x.employee_name}: net pay is "
+                             f"{flt(x.net_pay, 2)}")
+    prev = _q(
+        """select ss.employee, ss.net_pay from `tabSalary Slip` ss
+           where ss.docstatus=1 and ss.end_date < %(f)s
+             and ss.end_date = (select max(end_date) from `tabSalary Slip`
+                                where docstatus=1 and end_date < %(f)s)""",
+        {"f": m_start})
+    pmap = {p.employee: flt(p.net_pay) for p in prev}
+    for x in slips:
+        base = pmap.get(x.employee)
+        if base and base > 0:
+            swing = abs(flt(x.net_pay) - base) / base
+            if swing > 0.2:
+                anomalies.append(
+                    f"{x.employee_name}: net moved "
+                    f"{round(swing * 100)}% vs last month "
+                    f"({flt(base, 2)} -> {flt(x.net_pay, 2)})")
+
+    phase = "creating"
+    if expected and len(slips) >= expected:
+        phase = "drafts_ready"
+    if submitted and len(submitted) >= expected:
+        phase = "submitted"
+    return {"entries": [dict(e) for e in entries], "phase": phase,
+            "expected": expected, "created": len(slips),
+            "submitted": len(submitted), "recon": recon,
+            "recon_ok": all(r["ok"] for r in recon) if recon else False,
+            "anomalies": anomalies}
+
+
+@frappe.whitelist()
+def submit_payroll(month, confirm=0):
+    """Green click 2: submit every draft salary slip for the month's payroll
+    entries. Refuses while anomalies stand, unless explicitly confirmed."""
+    _require_access()
+    if "HR Manager" not in frappe.get_roles() and \
+            "System Manager" not in frappe.get_roles():
+        frappe.throw("Only HR Manager can submit payroll",
+                     frappe.PermissionError)
+    st = payroll_status(month)
+    if st["phase"] == "none":
+        frappe.throw("No Payroll Entry for this month yet.")
+    if st["phase"] == "creating":
+        frappe.throw(f"Slips still being created "
+                     f"({st['created']} of {st['expected']}). Wait a moment.")
+    if st["anomalies"] and not cint(confirm):
+        frappe.throw("Anomalies need reading first:<br>"
+                     + "<br>".join(st["anomalies"][:15]))
+    if st["recon"] and not st["recon_ok"] and not cint(confirm):
+        frappe.throw("Slip totals do not match the Review board. "
+                     "Do not submit until this is explained.")
+    for e in st["entries"]:
+        frappe.get_doc("Payroll Entry", e["name"]).submit_salary_slips()
+    frappe.db.commit()
+    return {"queued": True, "entries": [e["name"] for e in st["entries"]]}

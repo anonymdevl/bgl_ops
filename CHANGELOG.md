@@ -2,6 +2,67 @@
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.
 
+## 1.12.1 - 2026-08-28
+- Payroll creation is now watchable: a live progress rail (green-to-amber
+  fill with a traveling light) counts slips as they are written - big X/143
+  counter, rotating stage messages, and a "just written: <name>" ticker.
+  Finishes with a completion pulse and a green toast; submission gets its
+  own "N people are getting paid" moment.
+
+## 1.12.0 - 2026-08-28
+- Two green clicks: payroll runs itself from the Review board.
+  - Click 1 "Create Payroll (draft slips)": appears only when every group is
+    approved. Copies all settings from last month's Payroll Entry (accounts,
+    cost centre, bank), dates itself to the month, includes every active
+    employee, excludes non-active ones BY NAME (narrated, never silent),
+    submits the entry and drafts all salary slips.
+  - Machine check: slip component totals reconciled against the Review board
+    per group; anomalies flagged (approved money with no slip, zero or
+    negative net, >20% net swing vs last month).
+  - Click 2 "Submit all salary slips": instant when clean; when notes exist
+    it requires reading and an explicit confirm. Progress self-refreshes
+    while background slip creation runs.
+  - Duplicate-run guard: a month that already has a Payroll Entry can never
+    get a second one from the button (June had four - never again).
+
+## 1.11.0 - 2026-08-28
+- Payroll Prep Sheet reorganised into tabs, in payroll order: A New Hire
+  Pro-Ration, B Basic Salaries, 1 Loans, 2 Advances, 3 Absences,
+  4 Allowances & OT. One Save still writes every tab; Print Sheet still
+  prints all sections regardless of the open tab.
+- New "Basic Salaries" tab: every active employee's current basic (latest
+  salary assignment) with its effective date, filterable. Typing a corrected
+  figure creates a NEW submitted assignment effective the 1st of the active
+  payroll month - submitted history is never edited, the same supersede
+  pattern used for new-hire proration.
+- Print Sheet now also includes New Hire Pro-Ration and Allowances & OT
+  sections (previously only loans, advances, absences printed).
+
+## 1.10.2 - 2026-08-28
+- Fix (new-hire automation hole): the auto-created Salary Structure
+  Assignment now starts from the employee's JOINING DATE at the full agreed
+  basic, not the 1st of next month. Previously a hire with no manually
+  created SSA had no assignment covering their first month - Payroll Entry
+  would silently skip them. The proration override still trims month one to
+  days/22; later months pay full automatically.
+
+## 1.10.1 - 2026-08-28
+- Fix: the Review board's Approve button now submits drafts dated anywhere in
+  the payroll month, matching what the board displays (1.9.6 widened the
+  display but not the approve action - a mid-month-dated draft could show on
+  the board yet silently stay draft).
+
+## 1.10.0 - 2026-08-28
+- One story everywhere: "three lanes, one per role, three moves each".
+  - Payroll Guide rebuilt around the lanes: People & Leave, Trips & Cubic,
+    Payroll Numbers, Management view, plus a Reference group - same content,
+    finally grouped. Numbering restarts per lane.
+  - Cockpit and Executive stones carry a small lane label, so the trail
+    itself teaches whose move is next (no personal names anywhere).
+- Betonsa Leave Application Form: screen-only CSS so the desk print preview
+  matches the (already correct) PDF - sheet-width container, restored table
+  paddings and font sizes. PDF output untouched. Applied live and in fixture.
+
 ## 1.9.10 - 2026-08-28
 - Fix: encashment pipeline and payroll recovery align the global filter to
   whole months. A month-to-date view (1st to today) was excluding entries

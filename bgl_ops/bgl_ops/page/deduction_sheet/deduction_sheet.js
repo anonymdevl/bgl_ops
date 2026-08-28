@@ -42,6 +42,12 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		.dds-t tr.total td{font-weight:700;background:var(--subtle-fg)}\
 		.dds-t td.clears{color:var(--green-600);font-weight:700}\
 		.dds-add{margin:2px 0 10px}\
+		.dds-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 14px;border-bottom:1px solid var(--border-color);padding-bottom:10px}\
+		.dds-tab{border:1px solid var(--border-color);background:var(--fg-color);border-radius:100px;\
+			padding:6px 16px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--text-muted)}\
+		.dds-tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}\
+		.dds-tab .cnt{opacity:.75;font-weight:400;margin-left:4px}\
+		.dds-pane{display:none}.dds-pane.active{display:block}\
 	</style>').appendTo(body);
 	var holder = $('<div class="dds"></div>').appendTo(body);
 	holder.html('<p class="text-muted" style="padding:14px">Choose a month, then Load Sheet.</p>');
@@ -70,6 +76,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		var mi = parseInt(state.month.slice(5, 7), 10) - 1;
 		var label = MONTHS[mi] + ' ' + state.month.slice(0, 4);
 		var h = '';
+		h += '<div class="dds-pane" data-pane="hires">';
 		if ((d.new_hires || []).length) {
 			h += '<h4>A. New Hire Pro-Ration - ' + label + '</h4>' +
 				'<p class="sect-note">Found automatically from each joining date. Type the agreed monthly basic; this month pays basic x days/22 (component stays Basic Salary - the remark carries the New Hire Proration name), and the full basic becomes the Salary Structure Assignment from the 1st of next month.</p>' +
@@ -88,6 +95,25 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			});
 			h += '</tbody></table>';
 		}
+		if (!(d.new_hires || []).length) h += '<p class="sect-note">No joiners this month - nothing to prorate.</p>';
+		h += '</div>';
+
+		h += '<div class="dds-pane" data-pane="basics">' +
+			'<h4>B. Basic Salaries - current assignments</h4>' +
+			'<p class="sect-note">Every active employee\'s basic as payroll will use it. If one is wrong, type the corrected figure - saving creates a NEW assignment effective ' + state.month + '-01 (the old one stays as history; nothing submitted is edited). Leave blank to keep as is.</p>' +
+			'<input type="text" id="bs-filter" placeholder="Filter by name or branch..." style="margin-bottom:8px;max-width:280px" class="form-control input-sm">' +
+			'<div style="max-height:430px;overflow-y:auto">' +
+			'<table class="dds-t" id="dds-basics"><thead><tr>' +
+			'<th class="l">Employee</th><th class="l">Branch</th><th>Current basic</th><th class="l">Effective since</th><th>Corrected basic (only if wrong)</th></tr></thead><tbody>';
+		(d.basics || []).forEach(function(b) {
+			h += '<tr data-emp="' + b.employee + '"><td class="l">' + b.employee_name + '</td>' +
+				'<td class="l">' + (b.branch || '') + '</td><td>' + fmt(b.base) + '</td>' +
+				'<td class="l">' + frappe.datetime.str_to_user(b.from_date) + '</td>' +
+				'<td><input type="number" min="0" step="0.01" class="bs-new" placeholder="keep"></td></tr>';
+		});
+		h += '</tbody></table></div></div>';
+
+		h += '<div class="dds-pane" data-pane="loans">';
 		h += '<h4>1. Loans - ' + label + '</h4>' +
 			'<p class="sect-note">Pre-filled with each loan\'s agreed installment, capped at the balance. Set 0 to skip this month.</p>' +
 			'<table class="dds-t" id="dds-loans"><thead><tr>' +
@@ -106,7 +132,9 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		h += '<tr class="total"><td class="l">TOTAL LOANS</td><td></td><td></td><td></td><td></td><td id="tot-loans"></td><td></td></tr>';
 		h += '</tbody></table>';
 		h += '<button class="btn btn-xs btn-default dds-add" id="add-loan">+ Add loan / advance</button>';
+		h += '</div>';
 
+		h += '<div class="dds-pane" data-pane="adv">';
 		h += '<h4>2. Salary Advances - ' + label + '</h4>' +
 			'<p class="sect-note">Pre-filled from last month\'s submitted advances. Edit the exceptions, set 0 for no advance, add new people below. Advances are deducted in full this same month.</p>' +
 			'<table class="dds-t" id="dds-adv"><thead><tr>' +
@@ -128,7 +156,9 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		h += '<tr class="total"><td class="l">TOTAL ADVANCES</td><td></td><td id="tot-adv"></td><td></td></tr>';
 		h += '</tbody></table>' +
 			'<button class="btn btn-xs btn-default dds-add" id="add-adv">+ Add employee</button>';
+		h += '</div>';
 
+		h += '<div class="dds-pane" data-pane="abs">';
 		h += '<h4>3. Absent Days - ' + label + '</h4>' +
 			'<p class="sect-note">Enter DAYS only. The sheet computes the full amount ((days / 22) x Basic) and creates the Absent deduction draft exactly as HR uploads it today - offsetting net pay.</p>' +
 			'<table class="dds-t" id="dds-abs"><thead><tr>' +
@@ -143,7 +173,9 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		h += '<tr class="total"><td class="l">TOTAL</td><td id="tot-abs-days"></td><td id="tot-abs"></td><td></td></tr>';
 		h += '</tbody></table>' +
 			'<button class="btn btn-xs btn-default dds-add" id="add-abs">+ Add employee</button>';
+		h += '</div>';
 
+		h += '<div class="dds-pane" data-pane="allow">';
 		h += '<h4>4. Fixed Allowances and Overtime - ' + label + '</h4>' +
 			'<p class="sect-note">Carried forward from last month - edit only what changed. Employees on Trips or Cubic have the fixed OT cell locked (one overtime type per person).</p>' +
 			'<table class="dds-t" id="dds-allow"><thead><tr>' +
@@ -165,8 +197,36 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		h += '<tr class="total"><td class="l">TOTAL ALLOWANCES</td><td id="tot-ah"></td><td id="tot-at"></td><td id="tot-ae"></td><td id="tot-ao"></td><td id="tot-aa"></td></tr>';
 		h += '</tbody></table>' +
 			'<button class="btn btn-xs btn-default dds-add" id="add-allow">+ Add employee</button>';
+		h += '</div>';
+
+		var tabs = [['hires', 'A \u00b7 New Hire Pro-Ration', (d.new_hires || []).length],
+			['basics', 'B \u00b7 Basic Salaries', (d.basics || []).length],
+			['loans', '1 \u00b7 Loans', (d.loans || []).length],
+			['adv', '2 \u00b7 Advances', null],
+			['abs', '3 \u00b7 Absences', null],
+			['allow', '4 \u00b7 Allowances & OT', null]];
+		var tb = '<div class="dds-tabs">' + tabs.map(function(t) {
+			return '<span class="dds-tab" data-tab="' + t[0] + '">' + t[1] +
+				(t[2] !== null ? '<span class="cnt">(' + t[2] + ')</span>' : '') + '</span>';
+		}).join('') + '</div>';
+		h = tb + h;
 
 		holder.html(h);
+		var active = state.tab || 'hires';
+		holder.find('.dds-tab[data-tab="' + active + '"]').addClass('active');
+		holder.find('.dds-pane[data-pane="' + active + '"]').addClass('active');
+		holder.find('.dds-tab').on('click', function() {
+			state.tab = $(this).data('tab');
+			holder.find('.dds-tab, .dds-pane').removeClass('active');
+			$(this).addClass('active');
+			holder.find('.dds-pane[data-pane="' + state.tab + '"]').addClass('active');
+		});
+		holder.find('#bs-filter').on('input', function() {
+			var f = ($(this).val() || '').toLowerCase();
+			holder.find('#dds-basics tbody tr').each(function() {
+				$(this).toggle(!f || $(this).text().toLowerCase().indexOf(f) > -1);
+			});
+		});
 		holder.find('input').on('input', function() { $(this).addClass('dirty'); totals(); });
 		holder.find('#add-loan').on('click', add_loan);
 		holder.find('#add-adv').on('click', function() { add_person('adv'); });
@@ -319,7 +379,12 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			if ($(this).find('input.al-o').length) r.ota = flt($(this).find('input.al-o').val());
 			allowances.push(r);
 		});
-		return { loans: loans, advances: advances, absences: absences, new_hires: new_hires, allowances: allowances };
+		var basics = [];
+		holder.find('#dds-basics tbody tr[data-emp]').each(function() {
+			var v = flt($(this).find('input.bs-new').val());
+			if (v > 0) basics.push({ employee: $(this).data('emp'), new_base: v });
+		});
+		return { loans: loans, advances: advances, absences: absences, new_hires: new_hires, allowances: allowances, basics: basics };
 	}
 
 	function save_all() {
@@ -332,13 +397,15 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 					method: 'bgl_ops.api.deduction_save',
 					args: { month: state.month, loans: JSON.stringify(c.loans),
 						advances: JSON.stringify(c.advances), absences: JSON.stringify(c.absences),
-						new_hires: JSON.stringify(c.new_hires), allowances: JSON.stringify(c.allowances) },
+						new_hires: JSON.stringify(c.new_hires), allowances: JSON.stringify(c.allowances),
+						basics: JSON.stringify(c.basics) },
 					freeze: true, freeze_message: 'Saving deductions...',
 					callback: function(r) {
 						var m = r.message;
 						var msg = 'Saved: ' + m.loans + ' loan(s), ' + m.advances + ' advance(s), ' + m.absences +
 							' absence(s), ' + m.new_hires + ' proration(s), ' + m.allowances + ' allowance(s). Next: review + submit the drafts under Additional Salary, then run Payroll Entry.';
 						if (m.ssa_created && m.ssa_created.length) msg += ' Salary assignments created: ' + m.ssa_created.join('; ') + '.';
+						if (m.basics_changed && m.basics_changed.length) msg += ' Basic salary corrected: ' + m.basics_changed.join('; ') + '.';
 						if (m.cleared.length) msg += ' Loans cleared: ' + m.cleared.join(', ') + '.';
 						frappe.show_alert({ message: msg, indicator: m.errors.length ? 'orange' : 'green' });
 						if (m.errors.length) frappe.msgprint({ title: 'Some rows failed', message: m.errors.join('<br>') });
@@ -378,8 +445,12 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 				var isTotal = $(this).hasClass('total');
 				// skip zero-value data rows on print
 				if (!isTotal && $(this).find('input').length) {
-					var v = flt($(this).find('input').first().val());
+					var v = 0;
 					if (sel === '#dds-loans') v = flt($(this).find('input.dl-amt').val());
+					else if (sel === '#dds-allow' || sel === '#dds-hires') {
+						$(this).find('input').each(function() { v += flt($(this).val()); });
+					}
+					else v = flt($(this).find('input').first().val());
 					if (v <= 0) return;
 				}
 				t += '<tr class="' + (isTotal ? 'total' : '') + '">';
@@ -390,9 +461,11 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			});
 			return t + '</table>';
 		}
+		h += table_from('#dds-hires', 'A. New Hire Pro-Ration', ['New hire', 'Joined', 'Days', 'Actual basic', 'This month pays']);
 		h += table_from('#dds-loans', '1. Loans', ['Employee', 'Principal', 'Repaid', 'Balance', 'Installment', 'Deduct', 'After']);
 		h += table_from('#dds-adv', '2. Salary Advances', ['Employee', 'Last month', 'Deduct']);
 		h += table_from('#dds-abs', '3. Absent Days', ['Employee', 'Days', 'Est. deduction']);
+		h += table_from('#dds-allow', '4. Fixed Allowances and Overtime', ['Employee', 'Housing', 'Transport', 'Extra Duty', 'Fixed OT', 'Total']);
 		h += '<div class="sig">APPROVED BY MANAGING DIRECTOR .................................................................</div>';
 		h += '</body></html>';
 		var w = window.open('', '_blank');
