@@ -349,6 +349,18 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
       </div>
       <div id="pr-body"><p class="cap" style="padding:6px 2px">Pick a month and Check - every step of the payroll must be green before Payroll Entry.</p></div>
     </div>
+  
+    <div class="panel" style="margin-top:14px">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <div><h3>Leave balances - all staff</h3><p class="cap" style="margin-bottom:0">Current allocations; remaining = allocated - taken - encashed</p></div>
+        <input id="lr2-q" type="text" placeholder="Filter by name, branch, department..." autocomplete="off"
+          style="margin-left:auto;background:var(--panel2,#151b28);border:1px solid var(--line);color:inherit;border-radius:9px;padding:8px 14px;font:inherit;font-size:13px;min-width:260px">
+      </div>
+      <div class="twrap" style="margin-top:10px;max-height:340px;overflow-y:auto">
+        <table><thead id="lr2-head"></thead>
+        <tbody id="lr2-body"><tr><td class="empty">Loading...</td></tr></tbody></table>
+      </div>
+    </div>
   </section>
 
   <!-- ============ TRIPS ============ -->
@@ -447,14 +459,14 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
       <a class="kpi" id="card-advamt"><div class="ic i-t"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
         <div class="lab">Advances (payroll)</div><div class="val" id="l-advamt">-</div><div class="s2" id="l-advamt2">-</div></a>
       <a class="kpi" id="card-rec"><div class="ic i-g"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg></div>
-        <div class="lab">Recovered / month</div><div class="val" id="l-rec">-</div><div class="s2">GHS, loans + advances</div></a>
+        <div class="lab">Recovered (period)</div><div class="val" id="l-rec">-</div><div class="s2">GHS, loans + advances</div></a>
     </div>
 
     <div class="grid2">
       <div class="panel">
-        <h3>Monthly recovery split</h3><p class="cap">Live from payroll deductions (most recent run)</p>
+        <h3>Recovery split</h3><p class="cap">Payroll deductions in the selected period</p>
         <div class="donutwrap">
-          <div class="donut" id="l-donut"><div class="c"><b id="l-donut-v">-</b><span>GHS / month</span></div></div>
+          <div class="donut" id="l-donut"><div class="c"><b id="l-donut-v">-</b><span>GHS in period</span></div></div>
           <div class="legend" id="l-legend"></div>
         </div>
         <div class="note" id="l-note"><b>Interim view.</b> These figures come from payroll deduction entries. Once the opening loan list is seeded into the ledger, true principal and balance per person appear below.</div>
@@ -466,6 +478,17 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
           <tbody id="l-types"><tr><td colspan="5" class="empty">Ledger empty - awaiting the opening seed list.</td></tr></tbody>
         </table></div>
       </div>
+    </div>
+
+    <div class="panel" style="margin-top:14px">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <div><h3>Recovery by month</h3><p class="cap" style="margin-bottom:0">Pick any payroll month to see what was recovered</p></div>
+        <select id="rh-month" style="margin-left:auto;background:var(--panel2,#151b28);border:1px solid var(--line);color:inherit;border-radius:9px;padding:8px 14px;font:inherit;font-size:13px"></select>
+      </div>
+      <div class="twrap" style="margin-top:10px"><table>
+        <thead><tr><th>Component</th><th class="r">Staff</th><th class="r">Entries</th><th class="r">Drafts</th><th class="r">Recovered (GHS)</th></tr></thead>
+        <tbody id="rh-body"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
+      </table></div>
     </div>
 
     <div class="panel">
@@ -496,16 +519,20 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
   <!-- ============ LEAVE ============ -->
   <section class="view" id="v-leave">
     <div class="panel" style="margin-bottom:14px">
-      <h3>Who's Out</h3><p class="cap">Approved leave - away now, and starting within 14 days</p>
-      <div class="grid2">
-        <div><div class="cap" style="margin:4px 0 6px">OUT RIGHT NOW - <span id="wo-now-n">0</span></div>
-          <div class="twrap"><table>
-            <thead><tr><th>Employee</th><th>Type</th><th>Until</th><th>Back</th></tr></thead>
+      <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
+        <div><h3>Who's Out</h3><p class="cap" style="margin-bottom:0">Approved leave - away now, and starting within 14 days</p></div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <span style="display:inline-flex;align-items:center;gap:7px;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:100px;padding:5px 13px">Out now <b id="wo-now-n" style="font-family:'Space Grotesk',sans-serif;font-size:15px;color:var(--amber);letter-spacing:0">0</b></span>
+          <span style="display:inline-flex;align-items:center;gap:7px;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:100px;padding:5px 13px">Starting soon <b id="wo-up-n" style="font-family:'Space Grotesk',sans-serif;font-size:15px;color:var(--teal);letter-spacing:0">0</b></span>
+        </div>
+      </div>
+      <div class="grid2" style="margin-top:12px">
+        <div><div class="twrap"><table>
+            <thead><tr><th>Away now</th><th>Type</th><th>Until</th><th>Back</th></tr></thead>
             <tbody id="wo-now"><tr><td colspan="4" class="empty">Nobody is away today.</td></tr></tbody>
           </table></div></div>
-        <div><div class="cap" style="margin:4px 0 6px">STARTING SOON - <span id="wo-up-n">0</span></div>
-          <div class="twrap"><table>
-            <thead><tr><th>Employee</th><th>Type</th><th>From</th><th>Days</th></tr></thead>
+        <div><div class="twrap"><table>
+            <thead><tr><th>Starting soon</th><th>Type</th><th>From</th><th>Days</th></tr></thead>
             <tbody id="wo-up"><tr><td colspan="4" class="empty">No leave starting in the next 14 days.</td></tr></tbody>
           </table></div></div>
       </div>
@@ -528,16 +555,28 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
         <div class="note"><b>Liability lens:</b> unused entitled days are a real cash liability. The full per-employee breakdown lives in the Leave Balance Board.</div>
       </div>
       <div class="panel">
-        <h3>Encashment pipeline</h3><p class="cap">Requested, approved, paid</p>
+        <h3>Encashment pipeline</h3><p class="cap">Leave days staff are cashing out in the selected period - request &rarr; approval &rarr; paid with payroll</p>
         <div class="twrap"><table>
-          <thead><tr><th>Status</th><th class="r">Requests</th><th class="r">Days</th></tr></thead>
-          <tbody id="encbody"><tr><td colspan="3" class="empty">No leave encashments recorded yet.</td></tr></tbody>
+          <thead><tr><th>Stage</th><th class="r">Requests</th><th class="r">Days</th><th class="r">GHS</th></tr></thead>
+          <tbody id="encbody"><tr><td colspan="4" class="empty">No leave encashments recorded yet.</td></tr></tbody>
         </table></div>
         <div class="links" style="margin-top:12px">
           <a href="/app/leave-encashment/new" target="_blank">+ New leave encashment</a>
           <a href="/app/query-report/BGL Leave Balance Board" target="_blank">Leave Balance Board</a>
           <a href="/app/leave-application" target="_blank">Leave applications</a>
         </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:14px">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <div><h3>Leave balances - all staff</h3><p class="cap" style="margin-bottom:0">Current allocations; remaining = allocated - taken - encashed</p></div>
+        <input id="lr-q" type="text" placeholder="Filter by name, branch, department..." autocomplete="off"
+          style="margin-left:auto;background:var(--panel2,#151b28);border:1px solid var(--line);color:inherit;border-radius:9px;padding:8px 14px;font:inherit;font-size:13px;min-width:260px">
+      </div>
+      <div class="twrap" style="margin-top:10px;max-height:420px;overflow-y:auto">
+        <table><thead id="lr-head"></thead>
+        <tbody id="lr-body"><tr><td class="empty">Loading...</td></tr></tbody></table>
       </div>
     </div>
   </section>
@@ -826,11 +865,12 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
         '<div class="bar"><span class="nm">Taken</span><span class="t"><span class="f" style="width:'+Math.min(100,Math.round(d.leave.taken/ent*100))+'%;background:linear-gradient(90deg,var(--teal),#6fd6dd)"></span></span><span class="v">'+fmt(d.leave.taken)+'</span></div>'+
         '<div class="bar"><span class="nm">Remaining</span><span class="t"><span class="f" style="width:'+Math.min(100,Math.round(Math.max(0,ent-d.leave.taken)/ent*100))+'%;background:linear-gradient(90deg,var(--good),#79dcab)"></span></span><span class="v">'+fmt(Math.max(0,ent-d.leave.taken))+'</span></div>';
       if((d.encash||[]).length){
+        var ENCL={'Draft':'Requested - awaiting HR approval','Unpaid':'Approved - pays with next payroll','Submitted':'Approved - pays with next payroll','Paid':'Paid','Cancelled':'Cancelled'};
         el('encbody').innerHTML=d.encash.map(function(r){
-          return '<tr><td>'+esc(r.status)+'</td><td class="r">'+r.cnt+'</td><td class="r">'+fmt(r.days)+'</td></tr>'; }).join('');
+          return '<tr><td>'+esc(ENCL[r.status]||r.status)+'</td><td class="r">'+r.cnt+'</td><td class="r">'+fmt(r.days)+'</td><td class="r">'+fmt(r.amt)+'</td></tr>'; }).join('');
       }
     });
-    api('whos_out', {}, function(w){
+    api('whos_out', {site:PERIOD.site}, function(w){
       function back_in(dt){
         var ms=(new Date(dt+'T00:00:00'))-(new Date((w.as_of)+'T00:00:00'));
         var n=Math.round(ms/86400000);
@@ -846,6 +886,59 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
         el('wo-up').innerHTML=w.upcoming.map(function(r){
           return '<tr><td>'+esc(r.employee_name)+'<div class="cap">'+esc(r.designation||'')+' - '+esc(r.branch||r.department||'')+'</div></td>'+
             '<td>'+esc(r.leave_type)+'</td><td>'+r.from_date+'</td><td>'+fmt(r.days)+'</td></tr>'; }).join('');
+    });
+    api('leave_roster', {site:PERIOD.site}, function(lr){
+      var types=lr.types||[], rows=lr.rows||[];
+      var head='<tr><th>Employee</th>'+types.map(function(t){
+        return '<th class="r">'+esc(t)+' left</th>'; }).join('')+'<th class="r">Taken (all)</th></tr>';
+      function render(bodyId,f){
+        f=(f||'').toLowerCase();
+        var out=rows.filter(function(r){
+          return !f || (r.employee_name+' '+(r.branch||'')+' '+(r.department||'')).toLowerCase().indexOf(f)>-1;
+        }).map(function(r){
+          var taken=0; types.forEach(function(t){ var x=r.types[t]; if(x) taken+=x.taken; });
+          return '<tr><td>'+esc(r.employee_name)+'<div class="cap">'+esc(r.branch||'')+' - '+esc(r.department||'')+'</div></td>'+
+            types.map(function(t){ var x=r.types[t];
+              if(!x) return '<td class="r">-</td>';
+              var low=x.remaining<=0;
+              return '<td class="r"><b style="'+(low?'color:var(--bad,#e8776b)':'')+'">'+fmt(x.remaining)+'</b>'+
+                '<span class="cap"> / '+fmt(x.allocated)+'</span></td>'; }).join('')+
+            '<td class="r">'+fmt(taken)+'</td></tr>';
+        }).join('');
+        el(bodyId).innerHTML = out || '<tr><td class="empty" colspan="'+(types.length+2)+'">No match.</td></tr>';
+      }
+      [['lr-head','lr-body','lr-q'],['lr2-head','lr2-body','lr2-q']].forEach(function(ids){
+        var hd=el(ids[0]); if(!hd) return;
+        hd.innerHTML=head;
+        render(ids[1],'');
+        var q=el(ids[2]);
+        if(q && !q._wired){ q._wired=1;
+          q.addEventListener('keydown',function(e){e.stopPropagation();});
+          q.addEventListener('input',function(){ render(ids[1], q.value); }); }
+      });
+    });
+    api('recovery_history', {}, function(rh){
+      var rows=rh.rows||[], months=[];
+      rows.forEach(function(r){ if(months.indexOf(r.month)<0) months.push(r.month); });
+      var sel=el('rh-month');
+      var MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      function label(m){ var p=m.split('-'); return MN[+p[1]-1]+' '+p[0]; }
+      if(!sel._wired){ sel._wired=1;
+        sel.innerHTML=months.map(function(m){ return '<option value="'+m+'">'+label(m)+'</option>'; }).join('');
+        sel.addEventListener('change', function(){ show(sel.value); });
+      }
+      function show(m){
+        var rs=rows.filter(function(r){ return r.month===m; });
+        var tot=0; rs.forEach(function(r){ tot+=r.amt; });
+        el('rh-body').innerHTML = rs.length ? rs.map(function(r){
+          return '<tr><td>'+esc(r.salary_component)+'</td><td class="r">'+r.staff+'</td><td class="r">'+r.entries+'</td>'+
+            '<td class="r">'+(r.drafts? '<span style="color:var(--amber,#f0a04b);font-weight:700">'+r.drafts+'</span>':'0')+'</td>'+
+            '<td class="r">'+fmt(r.amt)+'</td></tr>'; }).join('')+
+          '<tr><td><b>TOTAL</b></td><td></td><td></td><td></td><td class="r"><b>'+fmt(tot)+'</b></td></tr>'
+          : '<tr><td colspan="5" class="empty">Nothing recovered in this month.</td></tr>';
+      }
+      if(months.length) show(sel.value||months[0]);
+      else el('rh-body').innerHTML='<tr><td colspan="5" class="empty">No recovery entries in the last 13 months.</td></tr>';
     });
   }
   load();
@@ -1402,6 +1495,15 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
             [['Component','salary_component'],['Months','months',1],['Total (GHS)','amount',1,1]])+
           table('Deductions by component', d.deductions_by_component||[],
             [['Component','salary_component'],['Months','months',1],['Total (GHS)','amount',1,1]])+
+          '</div>';
+        function stamp(r){ r=Object.assign({},r);
+          r.docstatus = r.docstatus===1 ? '<span style="color:var(--good,#2fb56f)">Submitted</span>' : '<span style="color:var(--amber,#f0a04b)">Draft</span>';
+          return r; }
+        h+='<div class="grid2" style="margin-top:12px">'+
+          table('Extra pay (Additional Salary)', (d.extra_pay||[]).map(stamp),
+            [['Month','payroll_date'],['Component','salary_component'],['Amount (GHS)','amount',1,1],['Status','docstatus']])+
+          table('Recoveries & other deductions (Additional Salary)', (d.extra_recoveries||[]).map(stamp),
+            [['Month','payroll_date'],['Component','salary_component'],['Amount (GHS)','amount',1,1],['Status','docstatus']])+
           '</div>';
         h+=table('Salary slips in period', d.slips||[],
           [['From','start_date'],['To','end_date'],['Gross','gross_pay',1,1],['Deductions','total_deduction',1,1],['Net','net_pay',1,1]]);

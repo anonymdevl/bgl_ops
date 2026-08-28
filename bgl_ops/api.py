@@ -54,7 +54,7 @@ def dashboard_data(from_date=None, to_date=None, site=None):
 
     from_date/to_date scope the trip metrics (default: month to date).
     site filters trips to one branch ('All' or empty = both).
-    Loans, leave and encashment are point-in-time and ignore the period.
+    Recovery, encashment and leave-taken respect the period; balances\n    (entitled days, ledger) are as-of-today snapshots by nature.
     """
     _require_access()
     period_start = str(getdate(from_date)) if from_date else str(get_first_day(today()))
@@ -117,14 +117,17 @@ def dashboard_data(from_date=None, to_date=None, site=None):
            from `tabAdditional Salary`
            where disabled=0 and docstatus < 2
              and salary_component in ('Loans','Salary Advance')
-             and payroll_date >= %(f)s
+             and payroll_date between %(f)s and %(t)s
            group by salary_component""",
-        {"f": add_days(today(), -40)})
+        {"f": period_start, "t": period_end})
 
     encash = _q(
-        """select status, count(*) cnt, ifnull(sum(encashment_days),0) days
+        """select status, count(*) cnt, ifnull(sum(encashment_days),0) days,
+                  ifnull(sum(encashment_amount),0) amt
            from `tabLeave Encashment`
-           where docstatus < 2 group by status""")
+           where docstatus < 2
+             and encashment_date between %(f)s and %(t)s
+           group by status""", {"f": period_start, "t": period_end})
 
     # Leave summary (company-wide, current allocations)
     leave = {
@@ -135,8 +138,8 @@ def dashboard_data(from_date=None, to_date=None, site=None):
         "taken": flt(_q(
             """select ifnull(sum(la.total_leave_days),0) v from `tabLeave Application` la
                where la.docstatus=1 and la.status='Approved'
-                 and la.from_date >= %(y)s""",
-            {"y": str(getdate(today()).year) + "-01-01"})[0].v),
+                 and la.from_date <= %(t)s and la.to_date >= %(f)s""",
+            {"f": period_start, "t": period_end})[0].v),
         "pending_apps": _q(
             """select count(*) v from `tabLeave Application`
                where docstatus=0 and status='Open'""")[0].v,
@@ -1230,6 +1233,20 @@ def employee_360(employee, from_date=None, to_date=None):
            group by leave_type""",
         {"e": employee, "f": from_date, "t": to_date})
 
+    # --- one-off Additional Salary entries in the period ---
+    extras = _q(
+        """select a.name, a.payroll_date, a.salary_component,
+                  a.amount, a.docstatus, ifnull(a.custom_bgl_note,'') note,
+                  ifnull(c.type,'Earning') ctype
+           from `tabAdditional Salary` a
+           left join `tabSalary Component` c on c.name = a.salary_component
+           where a.employee=%(e)s and a.docstatus < 2
+             and a.payroll_date between %(f)s and %(t)s
+           order by a.payroll_date desc, a.salary_component""",
+        {"e": employee, "f": from_date, "t": to_date})
+    extra_pay = [r for r in extras if r.ctype == 'Earning']
+    extra_recoveries = [r for r in extras if r.ctype != 'Earning']
+
     # --- leave picture (as of today, not just the period) ---
     allocs = _q(
         """select leave_type, from_date, to_date,
@@ -1278,6 +1295,8 @@ def employee_360(employee, from_date=None, to_date=None):
         "net": flt(sum(flt(s.net_pay) for s in slips), 2),
         "earnings_by_component": comp_rows("earnings"),
         "deductions_by_component": comp_rows("deductions"),
+        "extra_pay": extra_pay,
+        "extra_recoveries": extra_recoveries,
         "trips": trips,
         "leaves": leaves,
         "leave_balances": leave_balances,
@@ -1287,7 +1306,7 @@ def employee_360(employee, from_date=None, to_date=None):
 
 
 @frappe.whitelist()
-def whos_out():
+def whos_out(site=None):
     """Who's Out roster for the Command Center: on leave now, and starting
     within 14 days. Reads approved Leave Applications directly - the Employee
     banner fields hold only one leave each and are owned by server scripts."""
@@ -1306,8 +1325,10 @@ def whos_out():
            where la.docstatus=1 and la.status='Approved'
              and e.status='Active'
              and la.to_date >= %(t)s and la.from_date <= %(h)s
+             and (%(site)s = 'All' or e.branch = %(site)s)
            order by la.from_date asc""",
-        {"t": t, "h": horizon})
+        {"t": t, "h": horizon,
+         "site": site if site in ("Airport", "Tema") else "All"})
 
     out_now, upcoming = [], []
     for r in rows:
@@ -1316,3 +1337,68 @@ def whos_out():
     return {"as_of": t, "horizon": horizon,
             "out_now": out_now, "upcoming": upcoming,
             "counts": {"out_now": len(out_now), "upcoming": len(upcoming)}}
+
+
+@frappe.whitelist()
+def leave_roster(site=None):
+    """Every active employee's leave balances (current allocations),
+    pivoted per leave type - for the Command Center Leave tab."""
+    _require_access()
+    rows = _q(
+        """select la.employee, e.employee_name, e.branch, e.department,
+                  la.leave_type,
+                  sum(la.total_leaves_allocated) allocated,
+                  ifnull((select sum(ap.total_leave_days)
+                          from `tabLeave Application` ap
+                          where ap.employee=la.employee and ap.docstatus=1
+                            and ap.status='Approved'
+                            and ap.leave_type=la.leave_type
+                            and ap.from_date >= la.from_date
+                            and ap.to_date <= la.to_date),0) taken,
+                  ifnull((select sum(le.encashment_days)
+                          from `tabLeave Encashment` le
+                          where le.employee=la.employee and le.docstatus=1
+                            and le.leave_type=la.leave_type),0) encashed
+           from `tabLeave Allocation` la
+           inner join `tabEmployee` e on e.name=la.employee
+           where la.docstatus=1 and e.status='Active'
+             and %(d)s between la.from_date and la.to_date
+             and (%(site)s = 'All' or e.branch = %(site)s)
+           group by la.employee, la.leave_type, la.from_date, la.to_date
+           order by e.employee_name""",
+        {"d": today(), "site": site if site in ("Airport", "Tema") else "All"})
+
+    types, emps = [], {}
+    for r in rows:
+        if r.leave_type not in types:
+            types.append(r.leave_type)
+        e = emps.setdefault(r.employee, {
+            "employee": r.employee, "employee_name": r.employee_name,
+            "branch": r.branch, "department": r.department, "types": {}})
+        rem = flt(flt(r.allocated) - flt(r.taken) - flt(r.encashed), 1)
+        e["types"][r.leave_type] = {
+            "allocated": flt(r.allocated, 1), "taken": flt(r.taken, 1),
+            "encashed": flt(r.encashed, 1), "remaining": rem}
+    types.sort()
+    return {"as_of": today(), "types": types, "rows": list(emps.values())}
+
+
+@frappe.whitelist()
+def recovery_history():
+    """Loans / Salary Advance payroll recovery per month, last 13 months -
+    lets the Command Center offer a month picker without extra round trips."""
+    _require_access()
+    rows = _q(
+        """select date_format(payroll_date, '%%Y-%%m') month,
+                  salary_component,
+                  ifnull(sum(amount),0) amt,
+                  count(distinct employee) staff,
+                  count(*) entries,
+                  sum(docstatus=0) drafts
+           from `tabAdditional Salary`
+           where disabled=0 and docstatus < 2
+             and salary_component in ('Loans','Salary Advance')
+             and payroll_date >= date_sub(%(d)s, interval 13 month)
+           group by month, salary_component
+           order by month desc, salary_component""", {"d": today()})
+    return {"rows": rows}

@@ -2,6 +2,46 @@
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.
 
+## 1.9.5 - 2026-08-28
+- Global filter now governs every FLOW figure on the Command Center:
+  payroll recovery (loans + advances), the encashment pipeline and
+  company-wide leave taken all respect the selected period; Who's Out and
+  the all-staff leave roster respect the site filter. Balances (entitled
+  days, ledger balance) stay as-of-today - a balance has no past-period
+  form without ledger reconstruction.
+- Leave balances - all staff replicated on the Overview tab with its own
+  filter box.
+
+## 1.9.4 - 2026-08-28
+- Loans & Advances tab: "Recovery by month" panel with a month picker -
+  any payroll month from the last 13 shows loans and advances recovered
+  (staff, entries, drafts flagged amber, GHS total). One fetch, instant
+  switching.
+
+## 1.9.3 - 2026-08-28
+- Command Center Leave tab: "Leave balances - all staff" table - every active
+  employee with days left per leave type (remaining / allocated, red when
+  exhausted), filterable by name, branch or department.
+- Encashment pipeline made plain-language: stages read "Requested - awaiting
+  HR approval", "Approved - pays with next payroll", "Paid", with a GHS
+  column so the cash leaving with the next payroll is visible upfront.
+- Fix: "Recovered via payroll" figure now reads only the LATEST payroll
+  month - previously the 40-day window could double-count two months at
+  month-end.
+
+## 1.9.2 - 2026-08-28
+- Employee 360: two new tables under the component breakdowns - "Extra pay
+  (Additional Salary)" and "Recoveries & other deductions (Additional
+  Salary)" - every one-off payroll entry in the period (trips, loans,
+  advances, absences, allowances, encashments) with month, amount and
+  draft/submitted status. Split by the salary component's Earning/Deduction
+  type, so nothing that touched payroll is invisible any more.
+
+## 1.9.1 - 2026-08-27
+- Who's Out polish: counts moved into two quiet pills on the right of the
+  panel title; the tables now flow directly underneath with their own
+  "Away now" / "Starting soon" header columns - less clutter, cleaner scan.
+
 ## 1.9.0 - 2026-08-27
 - Leave module consolidated into the app (single source of truth):
   - Adopted the five live leave server scripts as fixtures
