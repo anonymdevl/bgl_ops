@@ -25,6 +25,21 @@ frappe.pages['payroll-guide'].on_page_load = function(wrapper) {
 		'Prep Sheet section 4: Housing, Transport, Extra Duty and fixed Overtime Allowance carry forward from last month - edit only what changed. Employees who earn Trips or Cubic have the fixed OT cell LOCKED: one overtime type per person, always.'],
 		['Review, approve, run payroll',
 		'<b>Review & Approve board</b> (BGL Operations > Review & Approve): each group shows its count, total, and whether it AGREES with its source (trip sheets, loan ledger, last month). Foreign/inactive employees and duplicates are flagged on top. Approve each group (HR Manager). When everything is green the "Proceed to Payroll Entry" button appears. Payroll Entry then pulls every submitted entry into the salary slips as usual.'],
+		['Leave and encashment',
+		'Every employee gets <b>18 working days</b> of Annual Leave a year - weekends never count, '+
+		'so Thursday to Monday costs 3 days, not 5. Casual (3) and Sick (5) work the same way.<ol>'+
+		'<li><b>Applying:</b> HR raises a Leave Application on the employee\'s behalf, sets the approver, '+
+		'approves and submits. Attendance marks itself On Leave for the working days and the balance updates instantly.</li>'+
+		'<li><b>Encashment (leave sold back for cash):</b> open a <b>Leave Encashment</b>. The amount computes '+
+		'itself: monthly basic &divide; 22 &times; days. Two ways to pay:<br>'+
+		'&bull; <b>With payroll</b> (normal): the Encashment Date decides WHICH month pays it - it must fall inside '+
+		'a payroll period you have not run yet. Use the last day of the current month. The system blocks dates in '+
+		'months already run.<br>'+
+		'&bull; <b>Cash now</b>: tick <b>Pay Via Payment Entry</b> and settle it from the bank today - it never '+
+		'touches a payslip.</li>'+
+		'<li><b>Watching it:</b> the Command Center Leave tab shows Who\'s Out, every employee\'s balance, and the '+
+		'encashment pipeline tagged PAYROLL or CASH so you always know how money is leaving.</li></ol>'+
+		'Encashment entries also appear on the Review &amp; Approve board under <b>Leave Encashments</b> before payroll runs.'],
 		['Finding a person fast: Employee Hub and Employee 360',
 		'On the BGL Operations workspace, the <b>Employee Hub</b> search box answers "who is this person and what is their situation" in two keystrokes: type a name, click the match, and the card shows branch, designation, joining date, mobile, vehicle, basic, live loan balance, leave taken and this month\'s trips - with one-click buttons to open the record, start a leave application, jump to the Prep Sheet, or see their payroll entries, salary slips and trip logs. Management gets the deeper <b>Employee 360</b> inside the Command Center: pick a person and a period (this month, last month, 3 months, this year, all time) and see gross paid, deductions, net received, every earning and deduction by component, all salary slips, trips and leave for that window.'],
 		['Fixing mistakes',

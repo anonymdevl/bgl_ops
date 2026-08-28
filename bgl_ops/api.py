@@ -63,6 +63,11 @@ def dashboard_data(from_date=None, to_date=None, site=None):
         period_start, period_end = period_end, period_start
     site = site if site in ("Airport", "Tema") else "All"
     yesterday = add_days(today(), -1)
+    # payroll-dated flows (recovery, encashment) are monthly by nature:
+    # align to whole months so a 31st-dated entry shows in a month-to-date view
+    from frappe.utils import get_last_day
+    pm_start = str(get_first_day(getdate(period_start)))
+    pm_end = str(get_last_day(getdate(period_end)))
 
     p = {"f": period_start, "t": period_end, "site": site}
     site_cond = " and (%(site)s = 'All' or branch = %(site)s)"
@@ -119,7 +124,7 @@ def dashboard_data(from_date=None, to_date=None, site=None):
              and salary_component in ('Loans','Salary Advance')
              and payroll_date between %(f)s and %(t)s
            group by salary_component""",
-        {"f": period_start, "t": period_end})
+        {"f": pm_start, "t": pm_end})
 
     encash = _q(
         """select status, ifnull(pay_via_payment_entry,0) via_pe,
@@ -130,7 +135,7 @@ def dashboard_data(from_date=None, to_date=None, site=None):
            where docstatus < 2
              and encashment_date between %(f)s and %(t)s
            group by status, via_pe
-           order by status""", {"f": period_start, "t": period_end})
+           order by status""", {"f": pm_start, "t": pm_end})
 
     # Leave summary (company-wide, current allocations)
     leave = {

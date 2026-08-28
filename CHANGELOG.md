@@ -2,6 +2,14 @@
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.
 
+## 1.9.10 - 2026-08-28
+- Fix: encashment pipeline and payroll recovery align the global filter to
+  whole months. A month-to-date view (1st to today) was excluding entries
+  dated at month-end - which is where payroll-dated documents naturally sit -
+  so a draft encashment dated the 31st vanished from the pipeline.
+- Payroll Guide: new "Leave and encashment" section - 18 working days,
+  weekend exclusion, both encashment payment routes and the date rule.
+
 ## 1.9.9 - 2026-08-28
 - Encashment pipeline now distinguishes the two payment routes. Each row is
   tagged PAYROLL or CASH and reads correctly for both: "Approved - pays with
