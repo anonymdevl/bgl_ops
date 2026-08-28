@@ -122,8 +122,9 @@ def dashboard_data(from_date=None, to_date=None, site=None):
         {"f": add_days(today(), -40)})
 
     encash = _q(
-        """select status, count(*) cnt, ifnull(sum(days),0) days
-           from `tabLeave Encashment Request` group by status""")
+        """select status, count(*) cnt, ifnull(sum(encashment_days),0) days
+           from `tabLeave Encashment`
+           where docstatus < 2 group by status""")
 
     # Leave summary (company-wide, current allocations)
     leave = {
@@ -1262,10 +1263,11 @@ def employee_360(employee, from_date=None, to_date=None):
            order by from_date desc limit 20""", {"e": employee})
 
     encashments = _q(
-        """select name, leave_type, request_date, days, amount, status
-           from `tabLeave Encashment Request`
-           where employee=%(e)s
-           order by request_date desc limit 20""", {"e": employee})
+        """select name, leave_type, encashment_date request_date,
+                  encashment_days days, encashment_amount amount, status
+           from `tabLeave Encashment`
+           where employee=%(e)s and docstatus < 2
+           order by encashment_date desc limit 20""", {"e": employee})
 
     return {
         "from_date": from_date, "to_date": to_date,
@@ -1282,3 +1284,35 @@ def employee_360(employee, from_date=None, to_date=None):
         "pending_leaves": pending_leaves,
         "encashments": encashments,
     }
+
+
+@frappe.whitelist()
+def whos_out():
+    """Who's Out roster for the Command Center: on leave now, and starting
+    within 14 days. Reads approved Leave Applications directly - the Employee
+    banner fields hold only one leave each and are owned by server scripts."""
+    _require_access()
+    t = today()
+    horizon = add_days(t, 14)
+
+    rows = _q(
+        """select la.employee, la.employee_name, e.department, e.branch,
+                  e.designation, la.leave_type, la.from_date, la.to_date,
+                  ifnull(la.custom_resume_date,
+                         date_add(la.to_date, interval 1 day)) resume_date,
+                  la.total_leave_days days
+           from `tabLeave Application` la
+           inner join `tabEmployee` e on e.name = la.employee
+           where la.docstatus=1 and la.status='Approved'
+             and e.status='Active'
+             and la.to_date >= %(t)s and la.from_date <= %(h)s
+           order by la.from_date asc""",
+        {"t": t, "h": horizon})
+
+    out_now, upcoming = [], []
+    for r in rows:
+        (out_now if str(r.from_date) <= str(t) else upcoming).append(r)
+
+    return {"as_of": t, "horizon": horizon,
+            "out_now": out_now, "upcoming": upcoming,
+            "counts": {"out_now": len(out_now), "upcoming": len(upcoming)}}

@@ -495,6 +495,21 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
 
   <!-- ============ LEAVE ============ -->
   <section class="view" id="v-leave">
+    <div class="panel" style="margin-bottom:14px">
+      <h3>Who's Out</h3><p class="cap">Approved leave - away now, and starting within 14 days</p>
+      <div class="grid2">
+        <div><div class="cap" style="margin:4px 0 6px">OUT RIGHT NOW - <span id="wo-now-n">0</span></div>
+          <div class="twrap"><table>
+            <thead><tr><th>Employee</th><th>Type</th><th>Until</th><th>Back</th></tr></thead>
+            <tbody id="wo-now"><tr><td colspan="4" class="empty">Nobody is away today.</td></tr></tbody>
+          </table></div></div>
+        <div><div class="cap" style="margin:4px 0 6px">STARTING SOON - <span id="wo-up-n">0</span></div>
+          <div class="twrap"><table>
+            <thead><tr><th>Employee</th><th>Type</th><th>From</th><th>Days</th></tr></thead>
+            <tbody id="wo-up"><tr><td colspan="4" class="empty">No leave starting in the next 14 days.</td></tr></tbody>
+          </table></div></div>
+      </div>
+    </div>
     <div class="kpis">
       <a class="kpi" id="card-ent"><div class="ic i-g"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 20A7 7 0 0 1 4 13c0-5 4-9 10-10 3-.5 6 0 6 0s.5 3 0 6c-1 6-5 10-10 10z"/></svg></div>
         <div class="lab">Days entitled (pool)</div><div class="val" id="v-ent">-</div><div class="s2">current allocations, all staff</div></a>
@@ -516,10 +531,10 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
         <h3>Encashment pipeline</h3><p class="cap">Requested, approved, paid</p>
         <div class="twrap"><table>
           <thead><tr><th>Status</th><th class="r">Requests</th><th class="r">Days</th></tr></thead>
-          <tbody id="encbody"><tr><td colspan="3" class="empty">No encashment requests recorded yet.</td></tr></tbody>
+          <tbody id="encbody"><tr><td colspan="3" class="empty">No leave encashments recorded yet.</td></tr></tbody>
         </table></div>
         <div class="links" style="margin-top:12px">
-          <a href="/app/leave-encashment-request/new" target="_blank">+ New encash request</a>
+          <a href="/app/leave-encashment/new" target="_blank">+ New leave encashment</a>
           <a href="/app/query-report/BGL Leave Balance Board" target="_blank">Leave Balance Board</a>
           <a href="/app/leave-application" target="_blank">Leave applications</a>
         </div>
@@ -534,7 +549,7 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
       <a href="/app/query-report/BGL Trip Costing">Trip costing</a>
       <a href="/app/staff-loan-advance">Loans &amp; advances</a>
       <a href="/app/query-report/BGL Leave Balance Board">Leave board</a>
-      <a href="/app/leave-encashment-request">Encash requests</a>
+      <a href="/app/leave-encashment">Encash requests</a>
       <a href="/app/bgl-vehicle">Vehicle List</a>
       <a href="/app/bgl-operations">Full workspace</a>
     </div>
@@ -684,7 +699,7 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
     setHref('card-ent', listUrl('leave-allocation', {docstatus:'1'}));
     setHref('card-taken', listUrl('leave-application', {status:'Approved', docstatus:'1'}));
     setHref('card-pend', listUrl('leave-application', {status:'Open'}));
-    setHref('card-enc', listUrl('leave-encashment-request', {status:'Requested'}));
+    setHref('card-enc', listUrl('leave-encashment', {docstatus:'0'}));
   }
   el('f-preset').addEventListener('change', function(){
     var c=this.value==='custom';
@@ -733,7 +748,7 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
       // signals
       var dot=function(c){ return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--'+c+');margin-right:9px;vertical-align:1px"></span>'; };
       var ledgerBal=0,ledgerCnt=0;(d.active_loans||[]).forEach(function(r){ledgerBal+=r.balance;ledgerCnt+=r.cnt;});
-      var encReq=0,encDays=0;(d.encash||[]).forEach(function(r){ if(r.status==='Requested'){encReq=r.cnt;encDays=r.days;} });
+      var encReq=0,encDays=0;(d.encash||[]).forEach(function(r){ if(r.status==='Draft'||r.status==='Unpaid'){encReq+=r.cnt;encDays+=r.days;} });
       el('signals').innerHTML =
         '<tr><td>'+dot('amber')+'Money owed (payroll recovery)</td><td class="r"><b>GHS '+fmt(loanAmt+advAmt)+'</b>/mo</td></tr>'+
         '<tr><td>'+dot('bad')+'Advances outstanding</td><td class="r">'+advStaff+' staff</td></tr>'+
@@ -814,6 +829,23 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
         el('encbody').innerHTML=d.encash.map(function(r){
           return '<tr><td>'+esc(r.status)+'</td><td class="r">'+r.cnt+'</td><td class="r">'+fmt(r.days)+'</td></tr>'; }).join('');
       }
+    });
+    api('whos_out', {}, function(w){
+      function back_in(dt){
+        var ms=(new Date(dt+'T00:00:00'))-(new Date((w.as_of)+'T00:00:00'));
+        var n=Math.round(ms/86400000);
+        return n<=0?'today':(n===1?'tomorrow':'in '+n+' days');
+      }
+      el('wo-now-n').textContent=(w.counts||{}).out_now||0;
+      el('wo-up-n').textContent=(w.counts||{}).upcoming||0;
+      if((w.out_now||[]).length)
+        el('wo-now').innerHTML=w.out_now.map(function(r){
+          return '<tr><td>'+esc(r.employee_name)+'<div class="cap">'+esc(r.designation||'')+' - '+esc(r.branch||r.department||'')+'</div></td>'+
+            '<td>'+esc(r.leave_type)+'</td><td>'+r.to_date+'</td><td>back '+back_in(r.resume_date)+'</td></tr>'; }).join('');
+      if((w.upcoming||[]).length)
+        el('wo-up').innerHTML=w.upcoming.map(function(r){
+          return '<tr><td>'+esc(r.employee_name)+'<div class="cap">'+esc(r.designation||'')+' - '+esc(r.branch||r.department||'')+'</div></td>'+
+            '<td>'+esc(r.leave_type)+'</td><td>'+r.from_date+'</td><td>'+fmt(r.days)+'</td></tr>'; }).join('');
     });
   }
   load();
@@ -1379,7 +1411,7 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
           table('Pending leave requests', d.pending_leaves||[],
             [['Type','leave_type'],['From','from_date'],['To','to_date'],['Days','days',1],['Status','status']])+
           '</div>';
-        h+=table('Leave encashment requests', (d.encashments||[]).map(function(x){
+        h+=table('Leave encashments', (d.encashments||[]).map(function(x){
             var col=x.status==='Paid'?'var(--good,#2fb56f)':(x.status==='Rejected'?'var(--bad,#e8776b)':'var(--amber,#f0a04b)');
             x=Object.assign({},x); x.status='<span style="color:'+col+';font-weight:700">'+x.status+'</span>'; return x; }),
           [['Date','request_date'],['Type','leave_type'],['Days','days',1],['Amount (GHS)','amount',1,1],['Status','status']]);

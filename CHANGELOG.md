@@ -2,6 +2,22 @@
 
 All releases in plain language. Version shows in the Payroll Cockpit footer.
 
+## 1.9.0 - 2026-08-27
+- Leave module consolidated into the app (single source of truth):
+  - Adopted the five live leave server scripts as fixtures
+    (anniversary policy assignment, encashment valuation base/22 x days,
+    leave-status banner sync on submit/cancel + daily).
+  - Adopted the six Employee leave-status banner custom fields as fixtures.
+- ONE encashment path: retired the custom Leave Encashment Request intake
+  doctype. Every surface (Command Center Leave tab, Leave Balance Board,
+  Employee 360, number card, workspace links) now reads stock Leave
+  Encashment, which actually values and pays via Additional Salary.
+- New: Who's Out on the Command Center Leave tab - who is away right now and
+  who starts leave within 14 days, computed live from approved Leave
+  Applications ("back in N days" is calculated at render, never stored).
+- Take Home Planner remnants fully removed from the app: 8 custom fields,
+  14 property setters, 2 client scripts, all fixture references.
+
 ## 1.8.5 - 2026-08-27
 - Employee Hub on BGL Operations and BGL Executive can now be hidden:
   click the "Employee Hub" title to collapse or expand it (the choice is

@@ -574,138 +574,177 @@
   ]
  },
  {
+  "name": "BGL Vehicle",
   "doctype": "DocType",
-  "name": "Leave Encashment Request",
   "module": "BGL Ops",
   "custom": 1,
-  "editable_grid": 1,
-  "engine": "InnoDB",
+  "naming_rule": "By fieldname",
+  "autoname": "field:vehicle_no",
   "allow_rename": 1,
-  "naming_rule": "Expression (old style)",
-  "autoname": "LENC-.YYYY.-.#####",
+  "editable_grid": 1,
+  "quick_entry": 1,
   "track_changes": 1,
-  "title_field": "employee_name",
+  "engine": "InnoDB",
   "sort_field": "modified",
   "sort_order": "DESC",
+  "index_web_pages_for_search": 1,
   "fields": [
    {
-    "fieldname": "employee",
-    "label": "Employee",
-    "fieldtype": "Link",
-    "options": "Employee",
+    "doctype": "DocField",
+    "idx": 1,
+    "fieldname": "vehicle_no",
+    "fieldtype": "Data",
+    "parent": "BGL Vehicle",
+    "parentfield": "fields",
+    "parenttype": "DocType",
+    "label": "Vehicle No",
     "reqd": 1,
+    "unique": 1,
+    "bold": 1,
     "in_list_view": 1,
-    "in_standard_filter": 1
+    "allow_in_quick_entry": 1,
+    "description": "Fleet number as written on the trip sheets, e.g. 928, 3472, GR7323-26"
    },
    {
-    "fieldname": "employee_name",
-    "label": "Name",
+    "doctype": "DocField",
+    "idx": 2,
+    "fieldname": "vehicle_type",
+    "fieldtype": "Select",
+    "parent": "BGL Vehicle",
+    "parentfield": "fields",
+    "parenttype": "DocType",
+    "label": "Type",
+    "options": "Mixer Truck\nPump Truck\nTrailer\nPickup\nCar\nOther",
+    "default": "Mixer Truck",
+    "in_list_view": 1,
+    "in_standard_filter": 1,
+    "allow_in_quick_entry": 1
+   },
+   {
+    "doctype": "DocField",
+    "idx": 3,
+    "fieldname": "cb1",
+    "fieldtype": "Column Break",
+    "parent": "BGL Vehicle",
+    "parentfield": "fields",
+    "parenttype": "DocType"
+   },
+   {
+    "doctype": "DocField",
+    "idx": 4,
+    "fieldname": "site",
+    "fieldtype": "Link",
+    "parent": "BGL Vehicle",
+    "parentfield": "fields",
+    "parenttype": "DocType",
+    "label": "Site",
+    "options": "Branch",
+    "in_list_view": 1,
+    "in_standard_filter": 1,
+    "allow_in_quick_entry": 1
+   },
+   {
+    "doctype": "DocField",
+    "idx": 5,
+    "fieldname": "license_plate",
     "fieldtype": "Data",
-    "fetch_from": "employee.employee_name",
-    "read_only": 1,
+    "parent": "BGL Vehicle",
+    "parentfield": "fields",
+    "parenttype": "DocType",
+    "label": "License Plate (optional)",
+    "allow_in_quick_entry": 1
+   },
+   {
+    "doctype": "DocField",
+    "idx": 6,
+    "fieldname": "is_active",
+    "fieldtype": "Check",
+    "parent": "BGL Vehicle",
+    "parentfield": "fields",
+    "parenttype": "DocType",
+    "label": "Active",
+    "default": "1",
     "in_list_view": 1
    },
    {
-    "fieldname": "department",
-    "label": "Department",
-    "fieldtype": "Link",
-    "options": "Department",
-    "fetch_from": "employee.department",
-    "read_only": 1,
-    "in_standard_filter": 1
-   },
-   {
-    "fieldname": "cb1",
-    "fieldtype": "Column Break"
-   },
-   {
-    "fieldname": "leave_type",
-    "label": "Leave Type",
-    "fieldtype": "Link",
-    "options": "Leave Type",
-    "default": "Annual Leave",
-    "reqd": 1,
-    "in_list_view": 1,
-    "in_standard_filter": 1
-   },
-   {
-    "fieldname": "request_date",
-    "label": "Request Date",
-    "fieldtype": "Date",
-    "default": "Today",
-    "reqd": 1
-   },
-   {
-    "fieldname": "status",
-    "label": "Status",
-    "fieldtype": "Select",
-    "options": "Requested\nApproved\nPaid\nRejected",
-    "default": "Requested",
-    "reqd": 1,
-    "in_list_view": 1,
-    "in_standard_filter": 1
-   },
-   {
+    "doctype": "DocField",
+    "idx": 7,
     "fieldname": "sb1",
     "fieldtype": "Section Break",
-    "label": "Details"
+    "parent": "BGL Vehicle",
+    "parentfield": "fields",
+    "parenttype": "DocType",
+    "label": "Notes"
    },
    {
-    "fieldname": "days",
-    "label": "Days to Encash",
-    "fieldtype": "Float",
-    "reqd": 1,
-    "in_list_view": 1
-   },
-   {
-    "fieldname": "amount",
-    "label": "Amount (if known)",
-    "fieldtype": "Currency"
-   },
-   {
-    "fieldname": "cb2",
-    "fieldtype": "Column Break"
-   },
-   {
-    "fieldname": "remarks",
-    "label": "Remarks",
-    "fieldtype": "Small Text"
+    "doctype": "DocField",
+    "idx": 8,
+    "fieldname": "notes",
+    "fieldtype": "Small Text",
+    "parent": "BGL Vehicle",
+    "parentfield": "fields",
+    "parenttype": "DocType",
+    "label": "Notes"
    }
   ],
   "permissions": [
    {
+    "doctype": "DocPerm",
+    "idx": 1,
     "role": "System Manager",
+    "permlevel": 0,
     "read": 1,
     "write": 1,
     "create": 1,
     "delete": 1,
     "report": 1,
     "export": 1,
+    "share": 1,
     "print": 1,
     "email": 1,
-    "share": 1
+    "parent": "BGL Vehicle",
+    "parentfield": "permissions",
+    "parenttype": "DocType"
    },
    {
+    "doctype": "DocPerm",
+    "idx": 2,
     "role": "HR Manager",
+    "permlevel": 0,
     "read": 1,
     "write": 1,
     "create": 1,
     "delete": 1,
     "report": 1,
     "export": 1,
+    "share": 1,
     "print": 1,
     "email": 1,
-    "share": 1
+    "parent": "BGL Vehicle",
+    "parentfield": "permissions",
+    "parenttype": "DocType"
    },
    {
+    "doctype": "DocPerm",
+    "idx": 3,
     "role": "HR User",
+    "permlevel": 0,
     "read": 1,
     "write": 1,
     "create": 1,
+    "delete": 1,
     "report": 1,
     "export": 1,
-    "print": 1
+    "share": 1,
+    "print": 1,
+    "email": 1,
+    "parent": "BGL Vehicle",
+    "parentfield": "permissions",
+    "parenttype": "DocType"
    }
-  ]
+  ],
+  "actions": [],
+  "links": [],
+  "states": []
  }
 ]

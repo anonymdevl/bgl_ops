@@ -4,7 +4,7 @@ Installable Frappe/ERPNext app for Betonsa Ghana Limited, by Powersoft.
 
 Bundles:
 - DocTypes: Daily Trip Log, BGL Trip Rate, Staff Loan Advance (+ Staff Loan
-  Repayment child), Leave Encashment Request
+  Repayment child)
 - Client Scripts: live trip costing, loan balance auto-compute
 - Query Reports: BGL Trip Costing, BGL Trips - Yesterday, BGL Leave Balance Board
 - Dashboard: 6 number cards + 3 charts on the "BGL Operations" workspace
@@ -18,11 +18,10 @@ Bundles:
 - No extra pip packages; the app uses only frappe APIs.
 
 NOTES
-- The Take Home client scripts call server methods (thp_calculate / thp_apply /
-  thp_bulk_generate) provided by the separately installed "smarterp" app, and the
-  Take Home DocTypes themselves live in the site database. Those scripts and the
-  related custom fields are bundled here for completeness; they are simply inert
-  if smarterp is absent.
+- Leave: policy assignment + allocations run on stock HRMS; encashment uses
+  stock Leave Encashment valued per-employee by the bgl_leave_encashment_amount
+  server script (base/22 x days).
+
 - The "Betonsa" letter head and report logos reference /files/betonsa_logo.jpeg.
   On a fresh site, upload that file once (or the logo will not render).
 - The "BGL Vehicle" master (fleet numbers incl. marketer cars/pickups) is

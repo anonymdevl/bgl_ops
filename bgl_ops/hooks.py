@@ -21,9 +21,13 @@ fixtures = [
     {"dt": "Custom HTML Block", "filters": [["name", "in", ["BGL Payroll Cockpit", "BGL Executive Deck"]]]},
     {"dt": "Role", "filters": [["name", "in", ["Command Center Viewer"]]]},
     {"dt": "DocType", "filters": [["name", "in", [
-        "Daily Trip Log", "BGL Trip Rate",
+        "Daily Trip Log", "BGL Trip Rate", "BGL Vehicle",
         "Staff Loan Advance", "Staff Loan Repayment",
-        "Leave Encashment Request",
+    ]]]},
+    {"dt": "Server Script", "filters": [["name", "in", [
+        "bgl_auto_leave_anniversary", "bgl_leave_encashment_amount",
+        "bgl_leave_status_after_submit", "bgl_leave_status_after_cancel",
+        "bgl_leave_status_sync",
     ]]]},
     # All site-specific custom fields (app-generated hrms/erpnext fields excluded)
     {"dt": "Custom Field", "filters": [["name", "in", [
@@ -31,11 +35,9 @@ fixtures = [
         "Additional Salary-custom_bgl_note",
         "Employee-custom_no_of_days_suspended", "Employee-ssnit_number",
         "Employee-custom_truck_no",
-        "Employee-custom_take_home_section", "Employee-custom_target_take_home",
-        "Employee-custom_basic_percentage", "Employee-custom_thp_cb",
-        "Employee-custom_standard_working_days", "Employee-custom_thp_split_sb",
-        "Employee-custom_allowance_split",
-        "Take Home Planner-salary_structure_input",
+        "Employee-custom_leave_status_sb", "Employee-custom_leave_status",
+        "Employee-custom_current_leave_type", "Employee-custom_leave_status_cb",
+        "Employee-custom_current_leave_from", "Employee-custom_return_to_work_date",
         "Leave Application-custom_designation", "Leave Application-custom_resume_date",
         "Leave Application-custom_receiving_section", "Leave Application-custom_form_serial_no",
         "Leave Application-custom_security_received_date", "Leave Application-custom_receiving_col",
@@ -51,13 +53,11 @@ fixtures = [
     {"dt": "Property Setter", "filters": [["doc_type", "in", [
         "Payroll Entry", "Salary Structure Assignment", "Employee",
         "Leave Application", "Leave Allocation", "Purchase Receipt",
-        "Take Home Planner", "Take Home Allowance Split",
+        "Daily Trip Log",
     ]]]},
     {"dt": "Client Script", "filters": [["name", "in", [
         "Daily Trip Log - Auto Cost",
         "Staff Loan Advance - Balance",
-        "Take Home Planner Buttons",
-        "Take Home Bulk Run Buttons",
     ]]]},
     {"dt": "Report", "filters": [["name", "in", [
         "BGL Trip Costing", "BGL Trips - Yesterday", "BGL Leave Balance Board",
