@@ -522,7 +522,7 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
         <select id="dd-month"></select>
         <button class="btn btn-g" id="dd-load">Load Sheet</button>
         <span class="spacer" style="flex:1"></span>
-        <button class="btn btn-p" id="dd-save" disabled>Save Deductions</button>
+        <button class="btn btn-p" id="dd-save" disabled>Save Prep Sheet</button>
         <button class="btn btn-g" id="dd-print" disabled>Print Sheet</button>
       </div>
       <div id="dd-body"><p class="cap" style="padding:8px 2px">Choose a month, then Load Sheet.</p></div>
@@ -1329,7 +1329,7 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
     var inst=parseFloat(prompt('Agreed monthly installment (GHS), blank for none:'))||0;
     api('loan_create', {employee:e.name, principal:principal, expected_monthly:inst},
       function(r){
-        toast('Loan '+r.name+' recorded for '+r.employee_name+'. Next: its installment now appears on this sheet - adjust if needed, then Save Deductions.');
+        toast('Loan '+r.name+' recorded for '+r.employee_name+'. Next: its installment now appears on this sheet - adjust if needed, then Save Prep Sheet.');
         el('dd-load').click(); load();
       });
   }

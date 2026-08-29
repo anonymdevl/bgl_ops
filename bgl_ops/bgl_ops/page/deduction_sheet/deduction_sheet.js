@@ -48,6 +48,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		.dds-tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}\
 		.dds-tab .cnt{opacity:.75;font-weight:400;margin-left:4px}\
 		.dds-pane{display:none}.dds-pane.active{display:block}\
+		.dds-splitline{border-top:1px dashed var(--border-color);margin:26px 0 4px}\
 		.dds-sign-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 12px;\
 			padding:8px 12px;border:1px solid var(--border-color);border-radius:8px;background:var(--subtle-fg)}\
 		.dds-sign-bar .btn{margin-left:auto}\
@@ -144,12 +145,12 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			h += '</tbody></table>';
 		}
 		if (!(d.new_hires || []).length) h += '<p class="sect-note">No joiners this month - nothing to prorate.</p>';
-		h += '</div>';
 
-		h += '<div class="dds-pane" data-pane="prorate">';
-		h += signoff_bar('Existing Staff Pro-Ration') + filter_box('prorate');
-		h += '<h4>A2. Existing Staff Pro-Ration - ' + label + ' <span class="text-muted" style="font-weight:400">(optional)</span></h4>' +
-			'<p class="sect-note">Only for someone <b>already on payroll</b> who worked part of the month - changed role mid-month, left, suspended, unpaid leave. Type the days worked and the agreed full monthly salary. Saving puts the full salary on an assignment effective the 1st, then deducts the days not worked. Leave this tab empty if nobody applies. Do not also list the same person on the Absences tab.</p>' +
+		// Same tab as the new hires, just set apart. One question - who needs
+		// their month prorated - not two places to go looking.
+		h += '<div class="dds-splitline"></div>';
+		h += '<h4>Existing staff who worked part of the month <span class="text-muted" style="font-weight:400">- optional</span></h4>' +
+			'<p class="sect-note">For someone <b>already on payroll</b> who worked part of the month - changed role mid-month, left, suspended, unpaid leave. Type the days worked and the agreed full monthly salary. Saving puts that salary on an assignment effective the 1st, then deducts the days not worked. Leave it empty if nobody applies. Do not also list the same person on the Absences tab.</p>' +
 			'<table class="dds-t" id="dds-prorate"><thead><tr>' +
 			'<th class="l">Employee</th><th>Days worked (of 22)</th>' +
 			'<th>Full monthly salary</th><th>Deducted</th><th>This month pays</th><th></th></tr></thead><tbody>';
@@ -160,7 +161,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			'<td id="tot-pr-full"></td><td id="tot-pr-ded"></td><td id="tot-pr-pay"></td><td></td></tr>';
 		h += '</tbody></table>' +
 			'<button class="btn btn-xs btn-default dds-add" id="add-prorate">+ Add employee</button>';
-		h += '</div>';
+		h += '</div>';   // closes the hires pane
 
 		h += '<div class="dds-pane" data-pane="basics">' +
 			'<h4>B. Basic Salaries - current assignments</h4>' +
@@ -273,8 +274,8 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			'<button class="btn btn-xs btn-default dds-add" id="add-allow">+ Add employee</button>';
 		h += '</div>';
 
-		var tabs = [['hires', 'A \u00b7 New Hire Pro-Ration', (d.new_hires || []).length],
-			['prorate', 'A2 \u00b7 Existing Staff Pro-Ration', count_rows(h, 'dds-prorate')],
+		var tabs = [['hires', 'A \u00b7 Pro-Ration',
+				(d.new_hires || []).length + count_rows(h, 'dds-prorate')],
 			['basics', 'B \u00b7 Basic Salaries', (d.basics || []).length],
 			['loans', '1 \u00b7 Loans', (d.loans || []).length],
 			['adv', '2 \u00b7 Advances', count_rows(h, 'dds-adv')],
@@ -618,7 +619,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			return t + '</table>';
 		}
 		h += table_from('#dds-hires', 'A. New Hire Pro-Ration', ['New hire', 'Joined', 'Days', 'Actual basic', 'This month pays']);
-		h += table_from('#dds-prorate', 'A2. Existing Staff Pro-Ration', ['Employee', 'Days worked', 'Full salary', 'Deducted', 'This month pays']);
+		h += table_from('#dds-prorate', 'A. Existing Staff Pro-Ration', ['Employee', 'Days worked', 'Full salary', 'Deducted', 'This month pays']);
 		h += table_from('#dds-loans', '1. Loans', ['Employee', 'Principal', 'Repaid', 'Balance', 'Installment', 'Deduct', 'After']);
 		h += table_from('#dds-adv', '2. Salary Advances', ['Employee', 'Last month', 'Deduct']);
 		h += table_from('#dds-abs', '3. Absent Days', ['Employee', 'Days', 'Est. deduction']);

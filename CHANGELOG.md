@@ -1,3 +1,16 @@
+## v1.18.1
+
+- Existing staff pro-ration moved back into the New Hire Pro-Ration tab,
+  set apart by a divider rather than given a tab of its own. One question,
+  who needs their month prorated, one place to answer it. Tab A2 is gone.
+- Fixes "Unknown section: Existing Staff Pro-Ration" when marking it
+  reviewed. It was asking to sign off a section the server did not
+  recognise; the merged tab now signs off once, under New Hire Pro-Ration.
+- That sign-off snapshot now watches both halves of the tab. It only
+  tracked Basic Salary, so editing a part month figure after signing off
+  would not have reopened it. The Absences snapshot excludes part month
+  rows in turn, so the two sections cannot go stale on each other.
+
 ## v1.18.0
 
 - Approve every draft in one pass, optional. Group by group is untouched

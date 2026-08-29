@@ -1156,9 +1156,21 @@ _SECTION_COMPONENTS = {
     "Loans": ("Loans",),
     "Advances": ("Salary Advance",),
     "Absences": ("Absent",),
-    "New Hire Pro-Ration": ("Basic Salary",),
+    "New Hire Pro-Ration": ("Basic Salary", "Absent"),
     "Allowances and OT": ("Housing Allowance", "Transport Allowance",
                           "Extra Duty Allowance", "Overtime Allowance"),
+}
+
+# The Pro-Ration tab and the Absences tab both write the Absent component,
+# so a snapshot keyed on component alone would have the two sections going
+# stale on each other's edits. Part month rows carry their own remark and
+# belong to Pro-Ration; everything else is a plain absence.
+_SECTION_NOTE_FILTER = {
+    "New Hire Pro-Ration":
+        " and (a.salary_component <> 'Absent'"
+        "      or ifnull(a.custom_bgl_note,'') like 'Part month%%')",
+    "Absences":
+        " and ifnull(a.custom_bgl_note,'') not like 'Part month%%'",
 }
 
 
@@ -1203,10 +1215,11 @@ def _section_snapshot_uncached(month, section):
     if not comps:
         return 0, 0.0, 0
     r = _q(
-        """select count(*) c, sum(amount) s, count(distinct employee) p
-           from `tabAdditional Salary`
-           where payroll_date between %(ms)s and %(d)s and docstatus < 2
-             and salary_component in %(c)s""",
+        """select count(*) c, sum(a.amount) s, count(distinct a.employee) p
+           from `tabAdditional Salary` a
+           where a.payroll_date between %(ms)s and %(d)s and a.docstatus < 2
+             and a.salary_component in %(c)s"""
+        + _SECTION_NOTE_FILTER.get(section, ""),
         {"ms": f"{month}-01", "d": m_end, "c": comps})[0]
     return cint(r.c), flt(r.s), cint(r.p)
 
