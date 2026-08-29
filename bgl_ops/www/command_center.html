@@ -782,10 +782,22 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
       function toRows(m){ return Object.keys(m).map(function(k){ return [k,m[k]]; })
         .sort(function(a,b){ return b[1]-a[1]; }); }
       CREW={All:toRows(all), Airport:toRows(air), Tema:toRows(tem)};
-      countUp('k-crew', crewTotal);
-      el('k-crew2').innerHTML='Drivers &amp; operators | <b>'+d.headcount+'</b> active staff';
+      // the card must agree with the site selector, or it contradicts the
+      // headcount printed directly beneath it
+      var crewShown = PERIOD.site==='Airport' ? airT
+                    : (PERIOD.site==='Tema' ? temT : crewTotal);
+      countUp('k-crew', crewShown);
+      el('k-crew2').innerHTML='Drivers &amp; operators | <b>'+d.headcount+'</b> active staff'+
+        (PERIOD.site!=='All' ? ' at '+PERIOD.site : '');
       el('k-sites2').textContent='Airport '+airT+' | Tema '+temT+' crew';
-      renderCrew('All');
+      // and the breakdown below opens on the site being viewed
+      var seg0=el('seg-crew');
+      if(seg0){
+        seg0.querySelectorAll('button').forEach(function(x){
+          x.classList.toggle('on', x.dataset.s===PERIOD.site);
+        });
+      }
+      renderCrew(PERIOD.site);
 
       // payroll recovery
       var loanAmt=0, loanStaff=0, advAmt=0, advStaff=0;
@@ -793,7 +805,8 @@ h1,h2,h3,.val{font-family:'Space Grotesk','Inter',sans-serif;letter-spacing:.01e
         if(r.salary_component==='Loans'){ loanAmt=r.amt; loanStaff=r.staff; }
         if(r.salary_component==='Salary Advance'){ advAmt=r.amt; advStaff=r.staff; }
       });
-      countUp('k-owing', loanStaff+advStaff);
+      // distinct people, not loan count plus advance count - many have both
+      countUp('k-owing', (d.owing_staff !== undefined ? d.owing_staff : loanStaff+advStaff));
       el('k-owing2').textContent='GHS '+fmt(loanAmt+advAmt)+' repaid / month';
       countUp('k-onleave', d.leave.on_leave_today);
       el('k-onleave2').textContent=d.leave.pending_apps+' applications pending';

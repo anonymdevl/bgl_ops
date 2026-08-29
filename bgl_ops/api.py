@@ -71,6 +71,9 @@ def dashboard_data(from_date=None, to_date=None, site=None):
 
     p = {"f": period_start, "t": period_end, "site": site}
     site_cond = " and (%(site)s = 'All' or branch = %(site)s)"
+    # Everything below hangs off an employee rather than carrying its own
+    # branch column, so it filters through the Employee record instead.
+    emp_cond = " and (%(site)s = 'All' or e.branch = %(site)s)"
     trips_month = _q(
         """select ifnull(sum(quantity),0) qty, ifnull(sum(amount),0) amt
            from `tabDaily Trip Log`
@@ -84,13 +87,14 @@ def dashboard_data(from_date=None, to_date=None, site=None):
     logs_today = _q(
         """select count(*) cnt, ifnull(sum(quantity),0) qty
            from `tabDaily Trip Log`
-           where docstatus < 2 and log_date = %(d)s""",
-        {"d": today()})[0]
+           where docstatus < 2 and log_date = %(d)s""" + site_cond,
+        {"d": today(), "site": site})[0]
     yday = _q(
         """select branch site, ifnull(sum(quantity),0) qty, ifnull(sum(amount),0) amt
            from `tabDaily Trip Log`
-           where docstatus=1 and log_date = %(d)s group by branch""",
-        {"d": yesterday})
+           where docstatus=1 and log_date = %(d)s""" + site_cond + """
+           group by branch""",
+        {"d": yesterday, "site": site})
     by_site = _q(
         """select branch site, pay_group, ifnull(sum(quantity),0) qty,
                   ifnull(sum(amount),0) amt
@@ -105,15 +109,19 @@ def dashboard_data(from_date=None, to_date=None, site=None):
 
     # Loans - the new ledger (source of truth once seeded)
     loans = _q(
-        """select loan_type, count(*) cnt, ifnull(sum(principal),0) principal,
-                  ifnull(sum(total_repaid),0) repaid, ifnull(sum(balance),0) balance
-           from `tabStaff Loan Advance`
-           where status='Active' group by loan_type""")
+        """select l.loan_type, count(*) cnt, ifnull(sum(l.principal),0) principal,
+                  ifnull(sum(l.total_repaid),0) repaid, ifnull(sum(l.balance),0) balance
+           from `tabStaff Loan Advance` l
+           join `tabEmployee` e on e.name = l.employee
+           where l.status='Active'""" + emp_cond + """
+           group by l.loan_type""", p)
     loan_rows = _q(
-        """select name, employee_name, loan_type, principal, total_repaid, balance, status
-           from `tabStaff Loan Advance`
-           where status in ('Active','Fully Paid')
-           order by balance desc limit 500""")
+        """select l.name, l.employee_name, l.loan_type, l.principal,
+                  l.total_repaid, l.balance, l.status
+           from `tabStaff Loan Advance` l
+           join `tabEmployee` e on e.name = l.employee
+           where l.status in ('Active','Fully Paid')""" + emp_cond + """
+           order by l.balance desc limit 500""", p)
 
     # Salary advances are not ledger records - they are recovered in full the
     # same month - but "who owes what" is the question people actually ask,
@@ -123,50 +131,71 @@ def dashboard_data(from_date=None, to_date=None, site=None):
            from `tabAdditional Salary` a
            join `tabEmployee` e on e.name = a.employee
            where a.docstatus < 2 and a.salary_component = 'Salary Advance'
-             and a.payroll_date between %(ms)s and %(me)s
+             and a.payroll_date between %(ms)s and %(me)s""" + emp_cond + """
            order by a.amount desc""",
         {"ms": get_first_day(getdate(today())).strftime("%Y-%m-%d"),
-         "me": _month_end(today()[:7])})
+         "me": _month_end(today()[:7]), "site": site})
 
     # Interim view until the ledger is seeded: live payroll deductions (last 40 days)
     payroll_recovery = _q(
-        """select salary_component, ifnull(sum(amount),0) amt,
-                  count(distinct employee) staff
-           from `tabAdditional Salary`
-           where disabled=0 and docstatus < 2
-             and salary_component in ('Loans','Salary Advance')
-             and payroll_date between %(f)s and %(t)s
-           group by salary_component""",
-        {"f": pm_start, "t": pm_end})
+        """select a.salary_component, ifnull(sum(a.amount),0) amt,
+                  count(distinct a.employee) staff
+           from `tabAdditional Salary` a
+           join `tabEmployee` e on e.name = a.employee
+           where a.disabled=0 and a.docstatus < 2
+             and a.salary_component in ('Loans','Salary Advance')
+             and a.payroll_date between %(f)s and %(t)s""" + emp_cond + """
+           group by a.salary_component""",
+        {"f": pm_start, "t": pm_end, "site": site})
+
+    # How many PEOPLE owe anything, counted once each. Adding the loan count
+    # to the advance count double counts everyone who has both, and plenty do.
+    owing_staff = _q(
+        """select count(distinct a.employee) v
+           from `tabAdditional Salary` a
+           join `tabEmployee` e on e.name = a.employee
+           where a.disabled=0 and a.docstatus < 2
+             and a.salary_component in ('Loans','Salary Advance')
+             and a.payroll_date between %(f)s and %(t)s""" + emp_cond,
+        {"f": pm_start, "t": pm_end, "site": site})[0].v
 
     encash = _q(
-        """select status, count(*) cnt, ifnull(sum(encashed_days),0) days,
-                  ifnull(sum(encashed_amount),0) amt
-           from `tabBGL Leave Encashment`
-           where encashment_date between %(f)s and %(t)s
-           group by status
-           order by field(status,'Requested','Approved','Unpaid','Paid','Rejected')""",
-        {"f": pm_start, "t": pm_end})
+        """select c.status, count(*) cnt, ifnull(sum(c.encashed_days),0) days,
+                  ifnull(sum(c.encashed_amount),0) amt
+           from `tabBGL Leave Encashment` c
+           join `tabEmployee` e on e.name = c.employee
+           where c.encashment_date between %(f)s and %(t)s""" + emp_cond + """
+           group by c.status
+           order by field(c.status,'Requested','Approved','Unpaid','Paid','Rejected')""",
+        {"f": pm_start, "t": pm_end, "site": site})
 
-    # Leave summary (company-wide, current allocations)
+    # Leave summary - follows the site selector like everything else
     leave = {
         "entitled": flt(_q(
-            """select ifnull(sum(total_leaves_allocated),0) v from `tabLeave Allocation`
-               where docstatus=1 and from_date<=%(d)s and to_date>=%(d)s""",
-            {"d": today()})[0].v),
+            """select ifnull(sum(a.total_leaves_allocated),0) v
+               from `tabLeave Allocation` a
+               join `tabEmployee` e on e.name = a.employee
+               where a.docstatus=1 and a.from_date<=%(d)s
+                 and a.to_date>=%(d)s""" + emp_cond,
+            {"d": today(), "site": site})[0].v),
         "taken": flt(_q(
-            """select ifnull(sum(la.total_leave_days),0) v from `tabLeave Application` la
+            """select ifnull(sum(la.total_leave_days),0) v
+               from `tabLeave Application` la
+               join `tabEmployee` e on e.name = la.employee
                where la.docstatus=1 and la.status='Approved'
-                 and la.from_date <= %(t)s and la.to_date >= %(f)s""",
-            {"f": period_start, "t": period_end})[0].v),
+                 and la.from_date <= %(t)s and la.to_date >= %(f)s""" + emp_cond,
+            {"f": period_start, "t": period_end, "site": site})[0].v),
         "pending_apps": _q(
-            """select count(*) v from `tabLeave Application`
-               where docstatus=0 and status='Open'""")[0].v,
+            """select count(*) v from `tabLeave Application` la
+               join `tabEmployee` e on e.name = la.employee
+               where la.docstatus=0 and la.status='Open'""" + emp_cond,
+            {"site": site})[0].v,
         "on_leave_today": _q(
-            """select count(*) v from `tabLeave Application`
-               where docstatus=1 and status='Approved'
-                 and from_date<=%(d)s and to_date>=%(d)s""",
-            {"d": today()})[0].v,
+            """select count(*) v from `tabLeave Application` la
+               join `tabEmployee` e on e.name = la.employee
+               where la.docstatus=1 and la.status='Approved'
+                 and la.from_date<=%(d)s and la.to_date>=%(d)s""" + emp_cond,
+            {"d": today(), "site": site})[0].v,
     }
 
     crew = _q(
@@ -176,7 +205,8 @@ def dashboard_data(from_date=None, to_date=None, site=None):
               'Plant Operator','Chemical')
            group by designation, branch""")
     headcount = _q(
-        "select count(*) v from `tabEmployee` where status='Active'")[0].v
+        """select count(*) v from `tabEmployee` e
+           where e.status='Active'""" + emp_cond, {"site": site})[0].v
 
     return {
         "as_of": today(),
@@ -189,6 +219,7 @@ def dashboard_data(from_date=None, to_date=None, site=None):
         "month_by_site_group": by_site,
         "trend_14d": trend,
         "active_loans": loans,
+        "owing_staff": owing_staff,
         "loan_rows": loan_rows,
         "advance_rows": advance_rows,
         "payroll_recovery": payroll_recovery,

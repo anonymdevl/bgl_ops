@@ -1,3 +1,24 @@
+## v1.19.0
+
+The Command Center site selector now means something.
+
+It only ever reached the four trip queries. Loans, advances, recovery,
+encashment, leave and headcount ignored it, so choosing Airport still
+listed Tema people and showed company-wide totals - the cards and the
+tables under them disagreed, which is worse than having no filter.
+
+- Ledger by type, Who owes what (loans and advances), Recovery by month,
+  Encashment pipeline, and every leave figure now filter by branch through
+  the employee record.
+- Logs today and Yesterday by site filter too.
+- The Field crew card and its breakdown follow the selector, so the number
+  on the card agrees with the headcount printed beneath it.
+- Crew data still returns both branches on purpose; the panel splits it
+  client side for the All / Airport / Tema chips.
+- Staff owing (payroll) counted loan staff PLUS advance staff, so the 13
+  people holding both were counted twice - the card read 107 where 94 people
+  actually owe something. It now counts each person once.
+
 ## v1.18.1
 
 - Existing staff pro-ration moved back into the New Hire Pro-Ration tab,
