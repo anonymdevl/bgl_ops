@@ -1,3 +1,13 @@
+## 1.21.2 - the strike-through bug and slow saves
+
+- Striking a row with x now counts as an edit. Before, the zeroed boxes
+  never registered as unsaved, so Mark Reviewed skipped them, the sheet
+  reloaded, and the "removed" row came straight back. Now Save and Mark
+  Reviewed both carry removals, every time.
+- Saves stop rewriting unchanged rows. Every save was writing all 140+
+  draft records whether they moved or not; a row whose figures did not
+  change is now left untouched, so saving takes seconds again.
+
 ## 1.21.1 - first-look fixes from the live install
 
 - Cubic Override no longer crashes on load (Frappe 16 refuses aggregate

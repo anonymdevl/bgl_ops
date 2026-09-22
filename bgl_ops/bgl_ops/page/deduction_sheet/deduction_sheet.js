@@ -407,6 +407,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			tr.find('input').prop('disabled', removed).css('opacity', removed ? .35 : 1);
 			if (removed) { tr.find('input').each(function() { $(this).data('prev', $(this).val()).val(0); }); }
 			else { tr.find('input').each(function() { $(this).val($(this).data('prev') || 0); }); }
+			tr.find('input').addClass('dirty');   // a strike IS an edit - Save and Mark Reviewed must carry it
 			tr.css('text-decoration', removed ? 'line-through' : 'none');
 			totals();
 		});

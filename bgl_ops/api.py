@@ -701,6 +701,14 @@ def _upsert_deduction_draft(employee, component, amount, m_end, remark,
             return "deleted"
         return "skipped"
     if existing:
+        cur = frappe.db.get_value(
+            "Additional Salary", existing,
+            ["amount", "custom_bgl_note", "overwrite_salary_structure_amount"],
+            as_dict=True)
+        if (abs(flt(cur.amount) - flt(amount, 2)) < 0.005
+                and (cur.custom_bgl_note or "") == (remark or "")
+                and int(cur.overwrite_salary_structure_amount or 0) == int(overwrite or 0)):
+            return "unchanged"   # nothing moved - do not rewrite the record
         doc = frappe.get_doc("Additional Salary", existing)
         doc.amount = flt(amount, 2)
         doc.custom_bgl_note = remark
