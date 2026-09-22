@@ -22,9 +22,37 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		return y + '-' + String(mi + 1).padStart(2, '0');
 	}
 
+	// The sheet, described once. print_sheet, print_tab and export_tab all
+	// read this, so a column added here appears in all three at once.
+	var SHEETS = [
+		{ pane: 'hires', sel: '#dds-hires', title: 'A. New Hire Pro-Ration', keep_all: 1,
+			cols: ['New hire', 'Joined', 'Days', 'Actual basic', 'This month pays'] },
+		{ pane: 'hires', sel: '#dds-prorate', title: 'A. Existing Staff Pro-Ration',
+			cols: ['Employee', 'Days worked', 'Full salary', 'Deducted', 'This month pays'] },
+		// keep_all: on this tab an empty box means "correct as it stands",
+		// so skipping empty rows would print almost nothing. That is the
+		// bug that made Tab B vanish from the printout.
+		{ pane: 'basics', sel: '#dds-basics', title: 'B. Basic Salaries', keep_all: 1,
+			cols: ['Employee', 'Branch', 'Current basic', 'Effective since', 'Corrected basic'] },
+		{ pane: 'loans', sel: '#dds-loans', title: '1. Loans', keep_all: 1,
+			cols: ['Employee', 'Principal', 'Repaid', 'Balance', 'Installment', 'Deduct', 'After'] },
+		{ pane: 'adv', sel: '#dds-adv', title: '2. Salary Advances', keep_all: 1,
+			cols: ['Employee', 'Last month', 'Deduct'] },
+		{ pane: 'abs', sel: '#dds-abs', title: '3. Absent Days',
+			cols: ['Employee', 'Days', 'Est. deduction'] },
+		{ pane: 'allow', sel: '#dds-allow', title: '4. Fixed Allowances and Overtime',
+			cols: ['Employee', 'Housing', 'Transport', 'Extra Duty', 'Fixed OT', 'Total'] }
+	];
+
 	page.set_primary_action('Load Sheet', load_sheet);
 	page.set_secondary_action('Save Prep Sheet', save_all);
-	page.add_inner_button('Print Sheet', print_sheet);
+	// bound through wrappers: add_inner_button hands the click event to the
+	// handler, and a jQuery event object is truthy, which would silently
+	// turn the bulk print into a single tab print.
+	page.add_inner_button('Print Sheet', function() { print_sheet(false); });
+	page.add_inner_button('Print This Tab', function() { print_sheet(true); });
+	page.add_inner_button('Export This Tab (CSV)', export_tab);
+	page.add_inner_button('Import This Tab (CSV)', import_tab);
 
 	var body = $('<div class="dds-body" style="margin:10px 20px 40px"></div>').appendTo(page.main);
 	$('<style>\
@@ -297,6 +325,26 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			$(this).addClass('active');
 			holder.find('.dds-pane[data-pane="' + state.tab + '"]').addClass('active');
 		});
+		// Quick entry: Enter walks down the column, Shift+Enter walks back
+		// up. Arrows are left alone on purpose - these are number inputs and
+		// up/down already drive the spinner, which people rely on.
+		holder.find('.dds-t').on('keydown', 'input', function(e) {
+			if (e.which !== 13) return;      // Enter only
+			e.preventDefault();
+			var $in = $(this), $td = $in.closest('td'), col = $td.index();
+			var $r = $td.closest('tr'), back = !!e.shiftKey;
+			while (true) {
+				$r = back ? $r.prev('tr') : $r.next('tr');
+				if (!$r.length) break;
+				if ($r.hasClass('total') || !row_shown($r[0])) continue;
+				var $n = $r.children('td').eq(col).find('input').first();
+				if ($n.length && !$n.prop('disabled') && !$n.prop('readonly')) {
+					$n.trigger('focus').trigger('select');
+					return;
+				}
+			}
+			$in.trigger('blur');             // end of the column, commit
+		});
 		holder.find('.dds-filter').on('input', function() {
 			var f = ($(this).val() || '').toLowerCase();
 			var pane = holder.find('.dds-pane[data-pane="' + $(this).data('pane') + '"]');
@@ -305,18 +353,35 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 				$(this).toggle(!f || $(this).text().toLowerCase().indexOf(f) > -1);
 			});
 		});
+		function sign_now(sec) {
+			frappe.call({ method: 'bgl_ops.api.signoff_set',
+				args: { month: state.month, section: sec }, freeze: true,
+				callback: function() {
+					frappe.show_alert({ message: sec + ' marked reviewed.', indicator: 'green' });
+					load_sheet();
+				} });
+		}
 		holder.find('.dds-sign').on('click', function() {
 			var sec = $(this).data('sec');
+			if (holder.find('input.dirty').length) {
+				frappe.confirm('You have unsaved edits on this sheet. A sign-off records the figures as stored on the server - signing now would cover the OLD numbers and reopen itself the moment you save.<br><br><b>Save the sheet now, then mark "' + sec + '" reviewed?</b>',
+					function() {
+						var c = collect();
+						frappe.call({
+							method: 'bgl_ops.api.deduction_save',
+							args: { month: state.month, loans: JSON.stringify(c.loans),
+								advances: JSON.stringify(c.advances), absences: JSON.stringify(c.absences),
+								new_hires: JSON.stringify(c.new_hires), allowances: JSON.stringify(c.allowances),
+								basics: JSON.stringify(c.basics), prorations: JSON.stringify(c.prorations) },
+							freeze: true, freeze_message: 'Saving the sheet first...',
+							callback: function() { sign_now(sec); }
+						});
+					});
+				return;
+			}
 			frappe.confirm('Mark "' + sec + '" as reviewed for ' + state.month +
 				'?<br><br>This is your name against these figures. The app records the totals as they stand now - if they change afterwards the sign-off reopens by itself.',
-				function() {
-					frappe.call({ method: 'bgl_ops.api.signoff_set',
-						args: { month: state.month, section: sec }, freeze: true,
-						callback: function() {
-							frappe.show_alert({ message: sec + ' marked reviewed.', indicator: 'green' });
-							load_sheet();
-						} });
-				});
+				function() { sign_now(sec); });
 		});
 		holder.find('.dds-reopen').on('click', function() {
 			var sec = $(this).data('sec');
@@ -328,6 +393,9 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 				} });
 		});
 		holder.find('input').on('input', function() { $(this).addClass('dirty'); totals(); });
+		holder.find('#dds-basics tbody tr[data-emp] input.bs-new, #dds-hires tbody tr[data-emp] input.nh-basic')
+			.after(' <button class="btn btn-xs btn-default dds-solve" title="Solve this basic from an agreed take-home">&#402;x</button>');
+		holder.find('.dds-solve').on('click', function() { open_solver($(this)); });
 		holder.find('#add-loan').on('click', add_loan);
 		holder.find('#add-adv').on('click', function() { add_person('adv'); });
 		holder.find('#add-prorate').on('click', function() { add_person('prorate'); });
@@ -573,8 +641,67 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		);
 	}
 
-	function print_sheet() {
+	// A row hidden by the filter box carries an inline display:none. Test
+	// that directly rather than with :visible - :visible asks the browser
+	// for layout, which makes it false for anything inside a pane that is
+	// not the open one, and false for every row in a headless test. Using
+	// :visible here silently exported zero rows.
+	function row_shown(el) {
+		return !el || !el.style || el.style.display !== 'none';
+	}
+
+	function csv_cell(s) {
+		s = (s === null || s === undefined) ? '' : String(s);
+		return '"' + s.replace(/"/g, '""') + '"';
+	}
+
+	function export_tab() {
 		if (!state.data) { frappe.msgprint('Load a sheet first.'); return; }
+		var pane = state.tab || 'hires';
+		var defs = SHEETS.filter(function(s) { return s.pane === pane; });
+		if (!defs.length) { frappe.msgprint('Nothing to export on this tab.'); return; }
+		var lines = [], rows = 0;
+		defs.forEach(function(df) {
+			if (lines.length) lines.push('');
+			lines.push(csv_cell(df.title));
+			lines.push(df.cols.map(csv_cell).join(','));
+			holder.find(df.sel + ' tbody tr').each(function() {
+				var $r = $(this);
+				// exactly what is on screen: the filter box is respected
+				if (!row_shown($r[0])) return;
+				var cells = [];
+				$r.find('td').each(function() {
+					var inp = $(this).find('input');
+					cells.push(inp.length ? inp.val() : $(this).text().trim());
+				});
+				if (!cells.length) return;
+				if (!$r.hasClass('total')) rows += 1;
+				lines.push(cells.slice(0, df.cols.length).map(csv_cell).join(','));
+			});
+		});
+		// BOM so Excel opens the Ghanaian names as UTF-8 rather than mojibake
+		var blob = new Blob(['\ufeff' + lines.join('\r\n')],
+			{ type: 'text/csv;charset=utf-8;' });
+		var url = URL.createObjectURL(blob);
+		var a = document.createElement('a');
+		a.href = url;
+		a.download = 'BGL-Prep-' + pane + '-' + state.month + '.csv';
+		document.body.appendChild(a);
+		a.click();
+		setTimeout(function() {
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+		}, 1000);
+		frappe.show_alert({ message: rows + ' row(s) exported.', indicator: 'green' }, 5);
+	}
+
+	function print_sheet(only_active) {
+		if (!state.data) { frappe.msgprint('Load a sheet first.'); return; }
+		var pane = state.tab || 'hires';
+		var defs = only_active
+			? SHEETS.filter(function(s) { return s.pane === pane; })
+			: SHEETS;
+		if (!defs.length) { frappe.msgprint('Nothing to print on this tab.'); return; }
 		var mi = parseInt(state.month.slice(5, 7), 10) - 1;
 		var label = MONTHS[mi] + ' ' + state.month.slice(0, 4);
 		var h = '<html><head><meta charset="utf-8"><title>Deduction Sheet ' + label + '</title><style>' +
@@ -587,12 +714,17 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			'.sig{margin-top:26pt;font-size:8pt;font-weight:bold}' +
 			'</style></head><body>' +
 			'<div class="hd"><img src="/files/betonsa_logo.jpeg"><div style="text-align:right">' +
-			'<h2>MONTHLY DEDUCTION SHEET</h2><div>' + label + '</div></div></div>';
-		function table_from(sel, title, cols) {
+			'<h2>MONTHLY DEDUCTION SHEET</h2><div>' + label +
+			(only_active ? ' &mdash; single section' : '') + '</div></div></div>';
+		function table_from(sel, title, cols, keep_all) {
 			var t = '<h3>' + title + '</h3><table><tr>';
 			cols.forEach(function(c, i) { t += '<th class="' + (i === 0 ? 'l' : '') + '">' + c + '</th>'; });
 			t += '</tr>';
 			holder.find(sel + ' tbody tr').each(function() {
+				// Printing one tab prints what you can see, filter and all.
+				// Printing everything cannot use :visible - the other panes
+				// are display:none, so it would print one tab and call it six.
+				if (only_active && !row_shown(this)) return;
 				var cells = [];
 				$(this).find('td').each(function() {
 					var inp = $(this).find('input');
@@ -601,7 +733,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 				if (!cells.length) return;
 				var isTotal = $(this).hasClass('total');
 				// skip zero-value data rows on print
-				if (!isTotal && $(this).find('input').length) {
+				if (!isTotal && !keep_all && $(this).find('input').length) {
 					var v = 0;
 					if (sel === '#dds-loans') v = flt($(this).find('input.dl-amt').val());
 					else if (sel === '#dds-allow' || sel === '#dds-hires') {
@@ -618,16 +750,126 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			});
 			return t + '</table>';
 		}
-		h += table_from('#dds-hires', 'A. New Hire Pro-Ration', ['New hire', 'Joined', 'Days', 'Actual basic', 'This month pays']);
-		h += table_from('#dds-prorate', 'A. Existing Staff Pro-Ration', ['Employee', 'Days worked', 'Full salary', 'Deducted', 'This month pays']);
-		h += table_from('#dds-loans', '1. Loans', ['Employee', 'Principal', 'Repaid', 'Balance', 'Installment', 'Deduct', 'After']);
-		h += table_from('#dds-adv', '2. Salary Advances', ['Employee', 'Last month', 'Deduct']);
-		h += table_from('#dds-abs', '3. Absent Days', ['Employee', 'Days', 'Est. deduction']);
-		h += table_from('#dds-allow', '4. Fixed Allowances and Overtime', ['Employee', 'Housing', 'Transport', 'Extra Duty', 'Fixed OT', 'Total']);
+		defs.forEach(function(df) {
+			h += table_from(df.sel, df.title, df.cols, df.keep_all);
+		});
 		h += '<div class="sig">APPROVED BY MANAGING DIRECTOR .................................................................</div>';
 		h += '</body></html>';
 		var w = window.open('', '_blank');
 		w.document.write(h); w.document.close();
 		setTimeout(function() { w.print(); }, 400);
 	}
+
+	function open_solver($btn) {
+		var tr = $btn.closest('tr'), emp = tr.data('emp');
+		var kind = tr.closest('table').attr('id') === 'dds-hires' ? 'hires' : 'basics';
+		var name = tr.find('td').first().text().trim();
+		var target_input = kind === 'hires' ? tr.find('input.nh-basic') : tr.find('input.bs-new');
+		var ar = holder.find('#dds-allow tbody tr[data-emp="' + emp + '"]');
+		var h = flt(ar.find('input.al-h').val()), t = flt(ar.find('input.al-t').val()),
+			e = flt(ar.find('input.al-e').val());
+		var days = kind === 'hires' ? (flt(tr.find('input.nh-days').val()) || 22) : 22;
+		var fields = [{ fieldname: 'target', label: 'Agreed take-home (GHS)', fieldtype: 'Float', reqd: 1 }];
+		if (kind === 'hires' && days < 22) fields.push({
+			fieldname: 'mode', label: 'That figure is', fieldtype: 'Select',
+			options: 'the FULL monthly package\nwhat they actually receive for the ' + days + ' days',
+			default: 'the FULL monthly package' });
+		fields.push({ fieldname: 'out', fieldtype: 'HTML' });
+		var dlg = new frappe.ui.Dialog({ title: 'Solve basic - ' + name, fields: fields,
+			primary_action_label: 'Solve', primary_action: function(v) {
+				var part = v.mode && v.mode.indexOf('actually receive') > -1;
+				frappe.call({ method: 'bgl_ops.api.solver_preview',
+					args: { target: v.target, solve_for: 'basic', housing: h, transport: t,
+						eda: e, days: part ? days : null },
+					callback: function(r) {
+						var m = r.message;
+						var fmt = function(x) { return format_number(x, null, 2); };
+						var html = '<table class="table table-sm" style="font-size:12.5px;margin-top:8px">' +
+							'<tr><td><b>Basic salary (goes in the sheet)</b></td><td style="text-align:right"><b>' + fmt(m.basic) + '</b></td></tr>' +
+							'<tr><td>Allowances (from Tab 4: ' + fmt(h) + ' / ' + fmt(t) + ' / ' + fmt(e) + ')</td><td style="text-align:right">' + fmt(m.allowances) + '</td></tr>' +
+							'<tr><td>SSNIT 5.5% / PAYE</td><td style="text-align:right">-' + fmt(m.ssnit) + ' / -' + fmt(m.paye) + '</td></tr>' +
+							'<tr><td>Full-month base take-home</td><td style="text-align:right">' + fmt(m.net) + '</td></tr>' +
+							(m.part_month_net != null
+								? '<tr><td>Proration (' + days + '/22 worked)</td><td style="text-align:right">-' + fmt(m.proration_deduction) + '</td></tr>' +
+								  '<tr><td><b>This part month receives</b></td><td style="text-align:right"><b>' + fmt(m.part_month_net) + '</b></td></tr>'
+								: '') +
+							'<tr><td>Agreed figure / off by</td><td style="text-align:right">' + fmt(m.target) + ' / ' + fmt(m.off_by) + '</td></tr>' +
+							'</table><div style="font-size:11.5px;color:var(--text-muted)">Trips/cubic and their overtime tax ride on top of this; advances, loans and absences come off. Nothing is written until you press Use, and nothing is SAVED until Save Prep Sheet - the sign-off covers it like any other edit.</div>' +
+							'<button class="btn btn-sm btn-primary" style="margin-top:8px" id="ths-use">Use ' + fmt(m.basic) + ' as the basic</button>';
+						dlg.get_field('out').$wrapper.html(html);
+						dlg.get_field('out').$wrapper.find('#ths-use').on('click', function() {
+							target_input.val(m.basic).addClass('dirty');
+							totals();
+							dlg.hide();
+							frappe.show_alert({ message: name + ': basic set to ' + fmt(m.basic) + '. Save the prep sheet to keep it.', indicator: 'blue' });
+						});
+					} });
+			} });
+		dlg.show();
+	}
+
+	function import_tab() {
+		if (!state.data) { frappe.msgprint('Load a sheet first.'); return; }
+		var pane = state.tab || 'hires';
+		var defs = SHEETS.filter(function(s) { return s.pane === pane; });
+		if (!defs.length) { frappe.msgprint('Nothing to import on this tab.'); return; }
+		var fi = $('<input type="file" accept=".csv,text/csv" style="display:none">').appendTo('body');
+		fi.on('change', function() {
+			var f = this.files[0]; fi.remove();
+			if (!f) return;
+			var rd = new FileReader();
+			rd.onload = function() {
+				var lines = String(rd.result).split(/\r?\n/).filter(function(l) { return l.trim(); });
+				function cells_of(line) {
+					var out = [], cur = '', q = false;
+					for (var i = 0; i < line.length; i++) {
+						var ch = line[i];
+						if (q) { if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+						else if (ch === '"') { q = true; }
+						else if (ch === ',') { out.push(cur); cur = ''; }
+						else cur += ch;
+					}
+					out.push(cur); return out;
+				}
+				var map = {};
+				defs.forEach(function(def) {
+					holder.find(def.sel + ' tbody tr[data-emp]').each(function() {
+						var k = $(this).find('td').first().text().trim().toLowerCase().replace(/\s+/g, ' ');
+						if (k) map[k] = this;
+						map[String($(this).data('emp')).toLowerCase()] = this;
+					});
+				});
+				var applied = 0, rows_hit = 0, missed = [];
+				lines.forEach(function(line, li) {
+					var c = cells_of(line);
+					var key = String(c[0] || '').replace(/^="?|"/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
+					if (!key || li === 0 || key === 'total' || key.indexOf('total') === 0) return;
+					var tr = map[key];
+					if (!tr) { missed.push(c[0]); return; }
+					var hit = false, ci = 0;
+					$(tr).find('td').each(function() {
+						var inp = $(this).find('input');
+						if (inp.length && !inp.prop('disabled') && !inp.prop('readonly')) {
+							var raw = String(c[ci] == null ? '' : c[ci]).replace(/[="\s,]|GHS/gi, '');
+							if (raw !== '' && !isNaN(parseFloat(raw))) {
+								var v = Math.abs(flt(raw));   // sign is NEVER trusted - the tab decides direction
+								if (flt(inp.val()) !== v) { inp.val(v).addClass('dirty'); applied++; hit = true; }
+							}
+						}
+						ci++;
+					});
+					if (hit) rows_hit++;
+				});
+				totals();
+				var msg = applied + ' value(s) filled in across ' + rows_hit + ' row(s) - highlighted orange, exactly as if typed by hand.' +
+					'<br><br><b>Nothing is saved yet.</b> Check the figures, then Save Prep Sheet; the sign-off and review flow cover an import the same as any typing.' +
+					'<br><br>Signs are ignored on purpose: -500 and 500 both mean 500, and whether it adds or deducts is decided by which tab it is - so a stray minus in Excel cannot flip a deduction into pay.';
+				if (missed.length) msg += '<br><br>Not on this tab (left alone): ' + missed.slice(0, 15).join(', ') + (missed.length > 15 ? ' and ' + (missed.length - 15) + ' more' : '');
+				frappe.msgprint({ title: 'Import - review before saving', indicator: applied ? 'orange' : 'blue', message: msg });
+			};
+			rd.readAsText(f);
+		});
+		fi.trigger('click');
+	}
+
 };

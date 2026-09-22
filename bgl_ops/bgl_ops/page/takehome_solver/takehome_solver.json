@@ -1,0 +1,21 @@
+{
+ "doctype": "Page",
+ "name": "takehome-solver",
+ "page_name": "takehome-solver",
+ "title": "Take-Home Solver",
+ "icon": "octicon octicon-graph",
+ "module": "BGL Ops",
+ "standard": "Yes",
+ "system_page": 0,
+ "roles": [
+  {
+   "role": "HR User"
+  },
+  {
+   "role": "HR Manager"
+  },
+  {
+   "role": "System Manager"
+  }
+ ]
+}

@@ -1,3 +1,56 @@
+## 1.21.0 - the September lessons
+
+Everything August taught us, turned into screens, so nothing about pay
+lives in Excel any more.
+
+- Take-Home Solver (new page). Management agrees "this person receives
+  3,000"; the screen solves PAYE/SSNIT backwards for the basic or the
+  allowance split, shows the full slip math, and Apply writes the salary
+  assignment + allowance records and rebuilds the draft slip. Labels are
+  explicit: what it shows is the BASE take-home - trips/cubic ride on top.
+- Cubic Override (new page). The trip-sheet figure and the payroll figure
+  side by side per driver; type what management wants paid, the change
+  shows live, Apply writes one clean record so the slip carries a single
+  normal cubic line. Daily Trip Logs are never modified.
+- Payment Sheet (CSV) button on Review & Approve. The bank sheet is
+  exported FROM the salary slips - the sheet you pay from IS the system,
+  so there is no second version of the truth to reconcile. It warns
+  loudly when slips are still drafts or an active employee has no slip.
+- The solver lives INSIDE the prep sheet: an fx button beside every
+  basic on Tab A (new hires) and Tab B opens it pre-filled, and for a
+  mid-month joiner it asks the question August taught us to ask - is the
+  agreed figure the monthly package, or what they receive for the part
+  month? Use fills the sheet cell; save and sign-off cover it like any
+  typing. The standalone page remains as a calculator only.
+- Every export now has an import: Import This Tab (CSV) fills the open
+  tab's boxes from a file, matching people by name or ID. Values arrive
+  as unsaved orange edits for review - never straight into the database -
+  and signs are ignored (the tab decides direction), so a stray minus in
+  Excel cannot flip a deduction into pay.
+- The full printout no longer drops rows that carry a decision: loans
+  with a balance but no deduction typed, advances awaiting a figure, and
+  new hires print in full, like Basic Salaries.
+- Mark Reviewed on the prep sheet now saves your unsaved edits first
+  (it asks). Before, it snapshotted the OLD stored figures and the very
+  next save reopened your own sign-off.
+
+## 1.20.0 - Phase 1: printing, exporting, quick entry
+
+Display and data entry only. api.py is byte identical to 1.19.0; the only
+files that changed are two page scripts, the guide and the version. No
+figure anywhere can move as a result of this release.
+
+- Prep sheet print now includes B - Basic Salaries. It was being dropped
+  by the rule that skips rows with an empty input, which on that tab means
+  "this basic is correct" - i.e. nearly every row.
+- Print This Tab and Export This Tab (CSV) alongside the unchanged bulk
+  Print Sheet. Both take only the active pane and honour the filter box.
+  CSV is written with a UTF-8 BOM so Excel renders the names correctly.
+- Enter moves down a column and selects the value, Shift+Enter moves up,
+  on every prep sheet grid and on the trip sheet. Hidden rows, total rows
+  and locked cells are skipped. Arrow keys deliberately untouched, since
+  these are number inputs and up/down belong to the spinner.
+
 ## v1.19.0
 
 The Command Center site selector now means something.

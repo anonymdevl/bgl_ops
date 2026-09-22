@@ -69,6 +69,27 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 	var msg = $('<div class="text-muted" style="margin:8px 0">Pick a site and month, then Load Sheet. Saturdays amber, Sundays red, green cells locked.</div>').appendTo(body);
 	var holder = $('<div class="tls-scroll"></div>').appendTo(body);
 
+	// Quick entry: Enter drops to the next driver in the same day column,
+	// Shift+Enter goes back up. Submitted cells are disabled and skipped,
+	// so are the grey designation band rows. Arrows stay with the spinner.
+	holder.on('keydown', 'table.tls input', function(e) {
+		if (e.which !== 13) return;
+		e.preventDefault();
+		var $in = $(this), $td = $in.closest('td'), col = $td.index();
+		var $r = $td.closest('tr'), back = !!e.shiftKey;
+		while (true) {
+			$r = back ? $r.prev('tr') : $r.next('tr');
+			if (!$r.length) break;
+			if ($r.hasClass('band') || ($r[0].style && $r[0].style.display === 'none')) continue;
+			var $n = $r.children('td').eq(col).find('input').first();
+			if ($n.length && !$n.prop('disabled') && !$n.prop('readonly')) {
+				$n.trigger('focus').trigger('select');
+				return;
+			}
+		}
+		$in.trigger('blur');
+	});
+
 	function rate_for(desig, day) {
 		var d = state.sheet;
 		if (!d) return 0;

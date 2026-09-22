@@ -4,6 +4,12 @@ frappe.pages['payroll-guide'].on_page_load = function(wrapper) {
 	});
 	var G = [
 	{ lane: 'What changed', tag: 'read this first if you used the old sheet', items: [
+		['Newest - printing, exporting and faster typing',
+		'Three conveniences. None of them changes a single figure.<ol>' +
+		'<li><b>Basic Salaries now prints.</b> The printed deduction sheet used to carry A, 1, 2, 3 and 4 but quietly leave out <b>B - Basic Salaries</b>. It is on the printout now, every active employee, whether or not their basic was corrected.</li>' +
+		'<li><b>Print or export just one tab.</b> <b>Print Sheet</b> still prints all of it. Beside it are <b>Print This Tab</b> and <b>Export This Tab (CSV)</b>, which take only the tab you are looking at - and they honour the filter box, so if you filter to Tema and press either, you get Tema. Use these when you want the advances and not 143 rows of basic salaries.</li>' +
+		'<li><b>Enter moves down.</b> On every prep sheet tab and on the Trip Sheet, pressing <b>Enter</b> jumps to the same column one row down and highlights what is there, so you can type straight over it. <b>Shift+Enter</b> goes back up. Rows hidden by the filter, total rows and locked cells are stepped over. The arrow keys still work the way they always did.</li>' +
+		'</ol>'],
 		['Five things now work differently',
 		'<ol>' +
 		'<li><b>Advances start at zero.</b> The tab still lists everyone who took one last month, but every box begins at <b>0</b>. An advance is a one-off, not a standing deduction. Type an amount only for people who took one THIS month. The Last month column is a memory jogger, nothing more.</li>' +
@@ -46,6 +52,9 @@ frappe.pages['payroll-guide'].on_page_load = function(wrapper) {
 		'When the month\'s entries are complete: <b>Submit Month</b> on each site (permanent - check the day totals first; only an HR Manager can Unlock Month). Then click <b>Generate Trip Earnings (Drafts)</b> once. That is the whole handover - the drafts land on the Review board.'],
 	]},
 	{ lane: 'Payroll Numbers', tag: 'last days of the month, strictly in order', items: [
+		['Move 1 - Prep Sheet: printing, exporting and typing quickly',
+		'<b>Enter</b> moves you down a column and highlights the box you land on, so you can type over it without touching the mouse. <b>Shift+Enter</b> goes back up. Filtered-out rows, total rows and locked cells are skipped.<br><br>' +
+		'To get it on paper or into Excel: <b>Print Sheet</b> gives you every tab, including <b>B - Basic Salaries</b>. <b>Print This Tab</b> and <b>Export This Tab (CSV)</b> give you only the tab in front of you, filter and all - so filter to a site first if that is all you need. The CSV opens straight in Excel with the names intact.'],
 		['Move 1 - Prep Sheet: what the tabs are',
 		'One page, six tabs, each with a count on its pill and its own filter box. <b>Save Prep Sheet</b> writes them all at once.<ol>' +
 		'<li><b>A - Pro-Ration</b>: joiners, and existing staff who worked part of the month.</li>' +

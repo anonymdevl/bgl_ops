@@ -1,0 +1,21 @@
+{
+ "doctype": "Page",
+ "name": "cubic-override",
+ "page_name": "cubic-override",
+ "title": "Cubic Override",
+ "icon": "octicon octicon-tools",
+ "module": "BGL Ops",
+ "standard": "Yes",
+ "system_page": 0,
+ "roles": [
+  {
+   "role": "HR User"
+  },
+  {
+   "role": "HR Manager"
+  },
+  {
+   "role": "System Manager"
+  }
+ ]
+}

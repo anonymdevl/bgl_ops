@@ -16,6 +16,30 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 		return y + '-' + String(mi + 1).padStart(2, '0');
 	}
 	page.set_primary_action('Load', load);
+	page.add_inner_button('Payment Sheet (CSV)', function() {
+		frappe.call({ method: 'bgl_ops.api.payment_sheet', args: { month: ym() },
+			freeze: true, freeze_message: 'Reading the salary slips...',
+			callback: function(r) {
+				var m = r.message || {};
+				var lines = ['Employee ID,Name,Branch,Bank,Account Number,Net Pay (GHS)'];
+				(m.rows || []).forEach(function(s) {
+					lines.push(['"' + s.employee + '"', '"' + (s.employee_name || '') + '"',
+						'"' + (s.branch || '') + '"', '"' + (s.bank_name || '') + '"',
+						'="' + (s.bank_account_no || '') + '"',
+						flt(s.net_pay).toFixed(2)].join(','));
+				});
+				lines.push(',,,,TOTAL,' + flt(m.total).toFixed(2));
+				var blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+				var a = document.createElement('a');
+				a.href = URL.createObjectURL(blob);
+				a.download = 'BGL-Payment-Sheet-' + ym() + '.csv';
+				a.click();
+				var msg = m.count + ' people, total GHS ' + format_number(m.total, null, 2) + '.';
+				if (m.draft_count) msg += '<br><br><b>' + m.draft_count + ' slip(s) are still DRAFTS.</b> Pay only after submission - this sheet exists so nobody ever pays from a hand-built Excel again.';
+				if ((m.missing || []).length) msg += '<br><br>Active with no slip this month: ' + m.missing.join(', ');
+				frappe.msgprint({ title: 'Payment sheet downloaded', indicator: m.draft_count ? 'orange' : 'green', message: msg });
+			} });
+	});
 
 	var body = $('<div style="margin:10px 20px 40px"></div>').appendTo(page.main);
 	$('<style>\

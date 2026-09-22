@@ -2229,3 +2229,287 @@ def submit_payroll(month, confirm=0):
         frappe.get_doc("Payroll Entry", e["name"]).submit_salary_slips()
     frappe.db.commit()
     return {"queued": True, "entries": [e["name"] for e in st["entries"]]}
+
+
+# ======================================================================
+# v1.21.0 - September lessons: take-home solver, trips/cubic override,
+# payment sheet generated from slips. Nothing above this line changed.
+# ======================================================================
+from frappe.utils import flt as _flt
+
+_PAYE_SLABS = [(490.0, 0.0), (110.0, 0.05), (130.0, 0.10),
+               (3166.67, 0.175), (16000.0, 0.25), (30520.0, 0.30)]
+_ALLOW_COMPONENTS = ['Housing Allowance', 'Transport Allowance',
+                     'Extra Duty Allowance']
+
+def _paye_monthly(taxable):
+    t, tax = _flt(taxable), 0.0
+    for width, rate in _PAYE_SLABS:
+        if t <= 0:
+            break
+        band = min(t, width)
+        tax += band * rate
+        t -= band
+    if t > 0:
+        tax += t * 0.35
+    return round(tax, 2)
+
+def _ot_tax_of(ot_total, basic):
+    ot, half = _flt(ot_total), _flt(basic) / 2.0
+    if ot <= 0:
+        return 0.0
+    if ot <= half:
+        return round(ot * 0.05, 2)
+    return round(half * 0.05 + (ot - half) * 0.10, 2)
+
+def _slip_math(basic, allowances):
+    basic, allowances = _flt(basic), _flt(allowances)
+    ssnit = round(basic * 0.055, 2)
+    paye = _paye_monthly(basic + allowances - ssnit)
+    gross = round(basic + allowances, 2)
+    return {'basic': round(basic, 2), 'allowances': round(allowances, 2),
+            'gross': gross, 'ssnit': ssnit, 'paye': paye,
+            'net': round(gross - ssnit - paye, 2)}
+
+def _solve_var(target, fn, hi_start=100000.0):
+    """Bisection + penny scan: smallest x (2dp) whose fn(x) hits target."""
+    target = _flt(target)
+    lo, hi = 0.0, hi_start
+    for _ in range(80):
+        mid = (lo + hi) / 2.0
+        if fn(mid) < target:
+            lo = mid
+        else:
+            hi = mid
+    best, best_d = round(hi, 2), None
+    c = round(hi, 2) - 0.05
+    while c <= round(hi, 2) + 0.05:
+        c = round(c, 2)
+        d = abs(fn(c) - target)
+        if best_d is None or d < best_d - 1e-9:
+            best, best_d = c, d
+        c += 0.01
+    return best
+
+@frappe.whitelist()
+def solver_preview(employee=None, target=None, solve_for='basic', basic=None,
+                   housing=None, transport=None, eda=None, split='40,30,30',
+                   days=None):
+    _require_access()
+    h, t, e = _flt(housing), _flt(transport), _flt(eda)
+    out = {'solve_for': solve_for}
+    if solve_for == 'net':
+        m = _slip_math(basic, h + t + e)
+        m.update({'housing': h, 'transport': t, 'eda': e})
+        out.update(m)
+        return out
+    if not _flt(target):
+        frappe.throw('Enter the agreed take-home amount to solve for.')
+    if solve_for == 'basic':
+        allow = h + t + e
+        d = _flt(days)
+        if d and d < 22:
+            frac = (22.0 - d) / 22.0
+            fn = lambda x: round(_slip_math(x, allow)['net'] - round(x * frac, 2), 2)
+        else:
+            fn = lambda x: _slip_math(x, allow)['net']
+        b = _solve_var(target, fn)
+        m = _slip_math(b, allow)
+        m.update({'housing': h, 'transport': t, 'eda': e})
+        if d and d < 22:
+            m['days'] = d
+            m['proration_deduction'] = round(b * (22.0 - d) / 22.0, 2)
+            m['part_month_net'] = round(m['net'] - m['proration_deduction'], 2)
+    elif solve_for == 'allowances':
+        if not _flt(basic):
+            frappe.throw('Fix the basic salary first, then solve for allowances.')
+        A = _solve_var(target, lambda x: _slip_math(basic, x)['net'])
+        try:
+            ph, pt, pe_ = [max(0.0, _flt(x)) for x in str(split).split(',')[:3]]
+        except Exception:
+            ph, pt, pe_ = 40.0, 30.0, 30.0
+        tot = (ph + pt + pe_) or 100.0
+        t = round(A * pt / tot, 2)
+        e = round(A * pe_ / tot, 2)
+        h = round(A - t - e, 2)
+        m = _slip_math(basic, A)
+        m.update({'housing': h, 'transport': t, 'eda': e})
+    else:
+        frappe.throw('Unknown solve_for: ' + str(solve_for))
+    m['achieved'] = m.get('part_month_net', m['net'])
+    m['target'] = round(_flt(target), 2)
+    m['off_by'] = round(m['achieved'] - _flt(target), 2)
+    out.update(m)
+    return out
+
+@frappe.whitelist()
+def solver_apply(employee, month, basic, housing, transport, eda, note=None):
+    _require_access()
+    m_start, m_end = _month_bounds(month)
+    emp = frappe.get_doc('Employee', employee)
+    if frappe.db.exists('Salary Slip', {'employee': employee,
+                                        'start_date': m_start, 'docstatus': 1}):
+        frappe.throw('A SUBMITTED salary slip already exists for %s in %s. '
+                     'Cancel it first - the solver never edits paid history.'
+                     % (emp.employee_name, month))
+    made, note = [], (note or 'Set by Take-Home Solver')
+    last = frappe.get_all('Salary Structure Assignment',
+        filters={'employee': employee, 'docstatus': 1},
+        fields=['name', 'from_date', 'salary_structure', 'income_tax_slab',
+                'payroll_payable_account', 'company'],
+        order_by='from_date desc', limit=1)
+    if not last:
+        frappe.throw('%s has no salary structure assignment to model on.'
+                     % emp.employee_name)
+    last = last[0]
+    if str(last.from_date) == str(m_start):
+        frappe.get_doc('Salary Structure Assignment', last.name).cancel()
+        made.append('cancelled ' + last.name)
+    ssa = frappe.new_doc('Salary Structure Assignment')
+    ssa.update({'employee': employee, 'salary_structure': last.salary_structure,
+                'from_date': m_start, 'income_tax_slab': last.income_tax_slab,
+                'payroll_payable_account': last.payroll_payable_account,
+                'company': last.company, 'base': _flt(basic)})
+    ssa.insert()
+    ssa.submit()
+    made.append('SSA %s base %s' % (ssa.name, _flt(basic)))
+    for comp, amt in zip(_ALLOW_COMPONENTS, [housing, transport, eda]):
+        for old in frappe.get_all('Additional Salary',
+                filters={'employee': employee, 'salary_component': comp,
+                         'docstatus': 1,
+                         'payroll_date': ['between', [m_start, m_end]]},
+                pluck='name'):
+            frappe.get_doc('Additional Salary', old).cancel()
+            made.append('cancelled ' + old)
+        ads = frappe.new_doc('Additional Salary')
+        ads.update({'employee': employee, 'salary_component': comp,
+                    'amount': _flt(amt), 'payroll_date': m_end,
+                    'company': emp.company,
+                    'overwrite_salary_structure_amount': 1,
+                    'custom_bgl_note': note})
+        ads.insert()
+        ads.submit()
+        made.append('%s %s' % (comp, _flt(amt)))
+    new_net = _rebuild_draft_slip(employee, m_start, m_end, emp.company)
+    return {'made': made, 'new_net': new_net}
+
+def _rebuild_draft_slip(employee, m_start, m_end, company):
+    slip = frappe.db.get_value('Salary Slip',
+        {'employee': employee, 'start_date': m_start, 'docstatus': 0},
+        ['name', 'payroll_entry'], as_dict=True)
+    if not slip:
+        return None
+    pe = slip.payroll_entry
+    frappe.delete_doc('Salary Slip', slip.name, force=1)
+    if not pe:
+        return None
+    s = frappe.new_doc('Salary Slip')
+    s.update({'employee': employee, 'start_date': m_start, 'end_date': m_end,
+              'posting_date': m_end, 'payroll_entry': pe, 'company': company})
+    s.insert()
+    return _flt(s.net_pay)
+
+@frappe.whitelist()
+def override_sheet(month, site=None):
+    _require_access()
+    m_start, m_end = _month_bounds(month)
+    comps = _trip_components()
+    if not comps:
+        return {'rows': []}
+    ads = frappe.get_all('Additional Salary',
+        filters={'docstatus': 1, 'salary_component': ['in', comps],
+                 'payroll_date': ['between', [m_start, m_end]]},
+        fields=['employee', 'employee_name', 'salary_component',
+                'sum(amount) as payroll_amount'],
+        group_by='employee, salary_component')
+    rows = []
+    for r in ads:
+        emp = frappe.db.get_value('Employee', r.employee,
+            ['branch', 'designation', 'employee_name'], as_dict=True) or {}
+        if site and site != 'All' and (emp.get('branch') or '') != site:
+            continue
+        sheet = _flt(frappe.db.sql("""select sum(amount) from `tabDaily Trip Log`
+            where employee=%s and salary_component=%s
+              and log_date between %s and %s""",
+            (r.employee, r.salary_component, m_start, m_end))[0][0])
+        basic = _flt(frappe.db.get_value('Salary Structure Assignment',
+            {'employee': r.employee, 'docstatus': 1,
+             'from_date': ['<=', m_end]}, 'base', order_by='from_date desc'))
+        slip_net = frappe.db.get_value('Salary Slip',
+            {'employee': r.employee, 'start_date': m_start, 'docstatus': 0},
+            'net_pay')
+        rows.append({'employee': r.employee,
+                     'employee_name': emp.get('employee_name') or r.employee_name,
+                     'designation': emp.get('designation'),
+                     'branch': emp.get('branch'),
+                     'component': r.salary_component,
+                     'sheet_total': sheet,
+                     'payroll_amount': _flt(r.payroll_amount),
+                     'basic': basic, 'slip_net': _flt(slip_net)})
+    rows.sort(key=lambda x: (x['branch'] or '', x['employee_name'] or ''))
+    return {'rows': rows}
+
+@frappe.whitelist()
+def override_apply(month, employee, component, new_amount, reason=None):
+    _require_access()
+    m_start, m_end = _month_bounds(month)
+    new_amount = _flt(new_amount)
+    if new_amount <= 0:
+        frappe.throw('The amount to pay must be above zero.')
+    emp = frappe.get_doc('Employee', employee)
+    if frappe.db.exists('Salary Slip', {'employee': employee,
+                                        'start_date': m_start, 'docstatus': 1}):
+        frappe.throw('%s already has a SUBMITTED slip for %s - an override '
+                     'now would disagree with paid history.'
+                     % (emp.employee_name, month))
+    sheet = _flt(frappe.db.sql("""select sum(amount) from `tabDaily Trip Log`
+        where employee=%s and salary_component=%s
+          and log_date between %s and %s""",
+        (employee, component, m_start, m_end))[0][0])
+    old_total = 0.0
+    for old in frappe.get_all('Additional Salary',
+            filters={'employee': employee, 'salary_component': component,
+                     'docstatus': 1,
+                     'payroll_date': ['between', [m_start, m_end]]},
+            fields=['name', 'amount']):
+        old_total += _flt(old.amount)
+        frappe.get_doc('Additional Salary', old.name).cancel()
+    delta = round(new_amount - sheet, 2)
+    note = ('%s %s: trip-sheet %s %+g management adjustment = %s. %s '
+            'Daily Trip Logs unchanged. Set from the Cubic Override screen.'
+            % (month, component, sheet, delta, new_amount,
+               ('Reason: %s.' % reason) if reason else ''))
+    ads = frappe.new_doc('Additional Salary')
+    ads.update({'employee': employee, 'salary_component': component,
+                'amount': new_amount, 'payroll_date': m_end,
+                'company': emp.company, 'custom_bgl_note': note})
+    ads.insert()
+    ads.submit()
+    new_net = _rebuild_draft_slip(employee, m_start, m_end, emp.company)
+    return {'record': ads.name, 'was': old_total, 'sheet': sheet,
+            'now': new_amount, 'delta': delta, 'new_net': new_net}
+
+@frappe.whitelist()
+def payment_sheet(month, site=None):
+    """The pay-after-run guard: the bank sheet comes FROM the slips."""
+    _require_access()
+    m_start, m_end = _month_bounds(month)
+    filters = {'start_date': m_start, 'docstatus': ['<', 2]}
+    slips = frappe.get_all('Salary Slip', filters=filters,
+        fields=['employee', 'employee_name', 'branch', 'bank_name',
+                'bank_account_no', 'net_pay', 'docstatus'])
+    if site and site != 'All':
+        slips = [s for s in slips if (s.branch or '') == site]
+    if not slips:
+        frappe.throw('No salary slips exist for %s yet. Run payroll first - '
+                     'the payment sheet only ever comes from the system.'
+                     % month)
+    have = {s.employee for s in slips}
+    missing = [e.employee_name for e in frappe.get_all('Employee',
+        filters={'status': 'Active'}, fields=['name', 'employee_name'])
+        if e.name not in have]
+    drafts = sum(1 for s in slips if s.docstatus == 0)
+    slips.sort(key=lambda s: (s.branch or '', s.employee_name or ''))
+    return {'rows': slips,
+            'total': round(sum(_flt(s.net_pay) for s in slips), 2),
+            'count': len(slips), 'draft_count': drafts, 'missing': missing}
