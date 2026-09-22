@@ -1,3 +1,17 @@
+## 1.21.1 - first-look fixes from the live install
+
+- Cubic Override no longer crashes on load (Frappe 16 refuses aggregate
+  strings in get_all; the query moved to plain SQL).
+- Month fields on Cubic Override and the Take-Home Solver are dropdowns
+  of real month names. input[type=month] is a picker on Chrome and a bare
+  text box on Safari - BGL runs Safari, so no one types 2026-09 again.
+- Sidebar reads in working order: Trip Log Sheet, Monthly Payroll Prep
+  Sheet, Review & Approve, Cubic Override, Take-Home Solver, Guide.
+- Workspace pages breathe on wide screens and the payroll-trail cards
+  clamp their detail text to three lines instead of ballooning.
+- The Payroll Guide page is rewritten clean for v1.21: the month in
+  order, screen-by-screen reference, the six rules.
+
 ## 1.21.0 - the September lessons
 
 Everything August taught us, turned into screens, so nothing about pay

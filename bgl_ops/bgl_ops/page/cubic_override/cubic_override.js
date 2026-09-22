@@ -10,13 +10,22 @@ frappe.pages['cubic-override'].on_page_load = function(wrapper) {
 		.cov .d-up{color:var(--green-600);font-weight:600}.cov .d-dn{color:var(--red-500);font-weight:600}\
 	</style>').appendTo(body);
 	body.append('<p style="font-size:13px;color:var(--text-muted);max-width:820px">Each driver\'s <b>trip-sheet</b> figure is what the logs say they earned; <b>on payroll</b> is what the month currently pays. When management wants someone topped up, type the figure they should receive and press Apply: one clean record is written, the draft slip rebuilds, and the Daily Trip Logs stay exactly as the drivers logged them.</p>');
+	function fill_months($sel) {
+		var M = ['January', 'February', 'March', 'April', 'May', 'June',
+			'July', 'August', 'September', 'October', 'November', 'December'];
+		var n = new Date();
+		for (var i = 0; i < 12; i++) {
+			var d = new Date(n.getFullYear(), n.getMonth() - i, 1);
+			var v = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+			$sel.append($('<option>').val(v).text(M[d.getMonth()] + ' ' + d.getFullYear()));
+		}
+	}
 	var bar = $('<div style="display:flex;gap:10px;margin:8px 0 14px;align-items:end">\
-		<div><label style="font-size:11px;color:var(--text-muted);display:block">Month</label><input type="month" id="cv-month"></div>\
+		<div><label style="font-size:11px;color:var(--text-muted);display:block">Month</label><select id="cv-month"></select></div>\
 		<div><label style="font-size:11px;color:var(--text-muted);display:block">Site</label>\
 			<select id="cv-site"><option>All</option><option>Airport</option><option>Tema</option></select></div>\
 	</div>').appendTo(body);
-	var now = new Date();
-	bar.find('#cv-month').val(now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
+	fill_months(bar.find('#cv-month'));
 	var holder = $('<div></div>').appendTo(body);
 	function fmt(v) { return format_number(v, null, 2); }
 	function load() {

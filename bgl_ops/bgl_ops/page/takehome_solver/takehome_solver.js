@@ -19,8 +19,18 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 		parent: emp_wrap, render_input: true,
 		df: { fieldtype: 'Link', options: 'Employee', label: 'Employee',
 			fieldname: 'employee', reqd: 1 } });
+	function fill_months($sel) {
+		var M = ['January', 'February', 'March', 'April', 'May', 'June',
+			'July', 'August', 'September', 'October', 'November', 'December'];
+		var n = new Date();
+		for (var i = 0; i < 12; i++) {
+			var d = new Date(n.getFullYear(), n.getMonth() - i, 1);
+			var v = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+			$sel.append($('<option>').val(v).text(M[d.getMonth()] + ' ' + d.getFullYear()));
+		}
+	}
 	var g = $('<div class="ths-grid">\
-		<div><label>Month</label><input type="month" id="th-month"></div>\
+		<div><label>Month</label><select id="th-month"></select></div>\
 		<div><label>Solve for</label><select id="th-for">\
 			<option value="basic">Basic (allowances fixed)</option>\
 			<option value="allowances">Allowance split (basic fixed)</option>\
@@ -32,8 +42,7 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 		<div><label>Extra Duty</label><input type="number" step="0.01" id="th-e"></div>\
 		<div><label>Split % (H,T,E)</label><input id="th-split" value="40,30,30"></div>\
 	</div>').appendTo(body);
-	var now = new Date();
-	g.find('#th-month').val(now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
+	fill_months(g.find('#th-month'));
 	var out = $('<div class="ths-out" style="display:none"></div>').appendTo(body);
 	var last = null;
 	function args() {

@@ -2416,12 +2416,14 @@ def override_sheet(month, site=None):
     comps = _trip_components()
     if not comps:
         return {'rows': []}
-    ads = frappe.get_all('Additional Salary',
-        filters={'docstatus': 1, 'salary_component': ['in', comps],
-                 'payroll_date': ['between', [m_start, m_end]]},
-        fields=['employee', 'employee_name', 'salary_component',
-                'sum(amount) as payroll_amount'],
-        group_by='employee, salary_component')
+    ads = frappe.db.sql("""select employee, salary_component,
+            max(employee_name) as employee_name,
+            sum(amount) as payroll_amount
+        from `tabAdditional Salary`
+        where docstatus = 1 and salary_component in %(comps)s
+          and payroll_date between %(s)s and %(e)s
+        group by employee, salary_component""",
+        {'comps': tuple(comps), 's': m_start, 'e': m_end}, as_dict=True)
     rows = []
     for r in ads:
         emp = frappe.db.get_value('Employee', r.employee,
