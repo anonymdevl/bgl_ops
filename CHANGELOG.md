@@ -1,3 +1,104 @@
+## v1.26.3 - 2026-09-22
+
+- Salary Slip print: adopted the site's existing "Salary Slip - Betonsa v2"
+  reconciliation handling in place of v1.26.1's relabelling. Reconciliation
+  Adjustment rows are removed from the slip entirely: the earning-side amount
+  is FOLDED into Extra Duty Allowance (or shown as "Other Allowance" when the
+  slip has no EDA row), and the deduction-side total prints as "Other
+  Deductions". Totals remain exact because amounts are folded, never dropped.
+
+## v1.26.2 - 2026-09-22
+
+- Bank Advice annex now uses the Employee-master check (same source as the
+  Missing Bank Details button) for each excluded employee, so the printed
+  "Missing" column states exactly which of Salary Mode = Bank / Bank Name /
+  Bank A/C No. HR must complete - including Salary Mode, which slip data
+  alone cannot reveal. Annex wording now points HR to the Employee master's
+  Salary Information section. Falls back to slip-derived detail if the
+  master lookup returns nothing for an employee.
+
+## v1.26.1 - 2026-09-22
+
+- Salary Slip print: internal reconciliation components are relabelled in
+  plain language on the printed slip only - "Reconciliation Adjustment"
+  prints as "Salary Adjustment", "Reconciliation Adjustment - Deduction" as
+  "Salary Adjustment (Recovery)". The rows stay (so earnings still sum to
+  GROSS PAY exactly) and the underlying records keep their real names for
+  audit; only the employee-facing label changes.
+
+## v1.26.0 - 2026-09-22
+
+- Salary Slip: full redesign of the "Salary Slip - Betonsa" print format to
+  match the Bank Advice aesthetics - real BetonSA logo + registered address
+  header, brand-red rule, employee card (name, ID, designation, site,
+  department, Days Paid as paid/working, bank + account from the Employee
+  master), earnings and deductions side by side with dark headers and zebra
+  rows, employer SSNIT contributions in a muted strip ABOVE the net band,
+  charcoal NET PAY band with red edge, amount in words, Private &
+  Confidential footer. Table-based layout - safe for wkhtmltopdf PDFs.
+- Set as the DEFAULT print format for Salary Slip (Property Setter fixture).
+- hooks.py: fixture export filters now include Salary Slip property setters
+  and the v1.25 Payroll Entry accrual Client Script.
+
+## v1.25.0 - 2026-09-22
+
+- Take-Home Solver (allowance-split mode): part-month support. For new hires
+  working fewer than 22 days, "That figure is what they actually receive for
+  the N days" now works in the default allowance-split mode too - the solver
+  finds the allowance pool whose PRORATED result (basic prorated, allowances
+  not) lands on the agreed cash.
+- Payroll Entry: new "Create Accrual Journal" button (Client Script - core
+  doctype untouched). Appears on a submitted Payroll Entry whose slips were
+  submitted individually (so the automatic journal never fired) and no journal
+  exists yet. Uses ERPNext's own accrual routine; fails with a clear message
+  if GL accounts are not configured.
+- Bank Advice: modern redesign - real BetonSA logo (from /files on the site)
+  with the registered address in the header, brand-red accents, clean tables,
+  footer on every printed page. Dialog simplified for the accountant: type
+  "Send to (bank & branch)" and "Company account the money leaves from" once,
+  and the bank is remembered automatically (named after itself, up to 10);
+  next month a single "Bank" pick refills both boxes.
+- New "Missing Bank Details" button on Review & Approve: lists every Active
+  employee whose Employee master is missing Salary Mode = Bank, Bank Name or
+  Bank A/C No. - specifying exactly which field(s) HR must complete. The bank
+  advice annex now also names what is missing per excluded employee.
+- Probation End Date is now MANDATORY when creating a new Employee (existing
+  records unaffected), so probation can no longer be forgotten at onboarding.
+
+## 1.24.0 - bank advice
+
+- New "Bank Advice (Print)" on Review & Approve: a formal, letterheaded
+  payment instruction fit to hand to the bank. Reference number, date,
+  bank address block, instruction paragraph with the total in figures
+  AND words, the employee/bank/account/amount schedule, and three
+  signature lines (two authorised signatories + MD).
+- Optional inputs before printing: which site (All/Airport/Tema), the
+  company account to debit, and the bank branch it is addressed to.
+- It refuses to print while any slip is still a draft - an instruction
+  to pay only ever comes from submitted payroll.
+- Employees with no account number on file are moved to a separate
+  annex page, clearly marked as excluded from the instruction, with
+  their own total - so the letter total always equals what the bank
+  should actually transfer.
+- The plain Payment Sheet CSV stays as-is for internal use.
+
+## 1.23.0 - solver everywhere defaults to allowance split, and applies everything
+
+- "Allowance split (basic fixed)" is now the DEFAULT solve mode on the
+  standalone Take-Home Solver page and in every fx dialog on the prep
+  sheet (Basic Salaries tab and the pro-ration tab). Basic stays what
+  it is; the solver finds the allowance pool and splits it by the
+  percentages (40,30,30 unless changed).
+- The fx dialogs now apply EVERYTHING on Use: the basic goes into its
+  column and the solved Housing/Transport/Extra Duty land straight on
+  the Allowances tab for that employee - no re-typing. One Save Prep
+  Sheet keeps it all, covered by the normal sign-off.
+- The standalone solver page grew an "Apply this to payroll..." button:
+  after a solve, pick it, confirm, and the figures are written for the
+  selected month (salary assignment + allowance records + the draft
+  slip rebuilt). It refuses months that already have a SUBMITTED slip -
+  the solver never edits paid history.
+
 ## 1.22.0 - probation watch
 
 - New "Probation End Date" field on the Employee, set by HR at

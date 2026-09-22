@@ -2364,7 +2364,15 @@ def solver_preview(employee=None, target=None, solve_for='basic', basic=None,
     elif solve_for == 'allowances':
         if not _flt(basic):
             frappe.throw('Fix the basic salary first, then solve for allowances.')
-        A = _solve_var(target, lambda x: _slip_math(basic, x)['net'])
+        d = _flt(days)
+        if d and d < 22:
+            # Target is the part-month cash for d days: basic is prorated
+            # (allowances are not), so solve the allowance pool against
+            # net minus the basic proration deduction.
+            pro = round(_flt(basic) * (22.0 - d) / 22.0, 2)
+            A = _solve_var(target, lambda x: round(_slip_math(basic, x)['net'] - pro, 2))
+        else:
+            A = _solve_var(target, lambda x: _slip_math(basic, x)['net'])
         try:
             ph, pt, pe_ = [max(0.0, _flt(x)) for x in str(split).split(',')[:3]]
         except Exception:
@@ -2375,6 +2383,10 @@ def solver_preview(employee=None, target=None, solve_for='basic', basic=None,
         h = round(A - t - e, 2)
         m = _slip_math(basic, A)
         m.update({'housing': h, 'transport': t, 'eda': e})
+        if d and d < 22:
+            m['days'] = d
+            m['proration_deduction'] = pro
+            m['part_month_net'] = round(m['net'] - pro, 2)
     else:
         frappe.throw('Unknown solve_for: ' + str(solve_for))
     m['achieved'] = m.get('part_month_net', m['net'])
@@ -2556,3 +2568,61 @@ def payment_sheet(month, site=None):
     return {'rows': slips,
             'total': round(sum(_flt(s.net_pay) for s in slips), 2),
             'count': len(slips), 'draft_count': drafts, 'missing': missing}
+
+
+@frappe.whitelist()
+def missing_payment_details():
+    """Active employees whose salary payment details are incomplete.
+
+    HR must set, on the Employee master (Salary section):
+      - Salary Mode = Bank
+      - Bank Name
+      - Bank A/C No.
+    Returns each offender with exactly which field(s) are missing so the
+    accountant can chase HR with specifics.
+    """
+    _require_access()
+    rows = frappe.get_all('Employee',
+        filters={'status': 'Active'},
+        fields=['name', 'employee_name', 'designation', 'branch',
+                'salary_mode', 'bank_name', 'bank_ac_no'],
+        order_by='branch, employee_name', limit_page_length=0)
+    out = []
+    for r in rows:
+        missing = []
+        if (r.salary_mode or '') != 'Bank':
+            missing.append('Salary Mode (set to Bank)')
+        if not (r.bank_name or '').strip():
+            missing.append('Bank Name')
+        if not (r.bank_ac_no or '').strip():
+            missing.append('Bank A/C No.')
+        if missing:
+            out.append({'employee': r.name, 'employee_name': r.employee_name,
+                        'designation': r.designation, 'branch': r.branch,
+                        'missing': missing})
+    return {'rows': out, 'count': len(out)}
+
+
+@frappe.whitelist()
+def create_accrual_journal(payroll_entry):
+    """Create the payroll accrual Journal Entry for a submitted Payroll Entry
+    whose slips were submitted outside its own bulk flow (so the automatic
+    journal never fired). Uses ERPNext's own accrual routine."""
+    _require_access()
+    doc = frappe.get_doc('Payroll Entry', payroll_entry)
+    if doc.docstatus != 1:
+        frappe.throw('Submit the Payroll Entry first.')
+    if frappe.db.exists('Journal Entry Account',
+                        {'reference_type': 'Payroll Entry',
+                         'reference_name': doc.name,
+                         'docstatus': ['<', 2]}):
+        frappe.throw('An accrual journal already exists for {0}.'.format(doc.name))
+    try:
+        jv = doc.make_accrual_jv_entry()
+    except Exception as e:
+        frappe.throw('ERPNext could not build the journal: {0}. '
+                     'This usually means salary components or the payroll '
+                     'payable account have no GL accounts configured for '
+                     'the company.'.format(e))
+    return {'journal': getattr(jv, 'name', None) or str(jv),
+            'message': 'Accrual journal created for {0}.'.format(doc.name)}

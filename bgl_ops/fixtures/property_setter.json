@@ -227,5 +227,14 @@
   "property": "fetch_if_empty",
   "property_type": "Check",
   "value": "1"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Salary Slip-main-default_print_format",
+  "doctype_or_field": "DocType",
+  "doc_type": "Salary Slip",
+  "property": "default_print_format",
+  "property_type": "Data",
+  "value": "Salary Slip - Betonsa"
  }
 ]

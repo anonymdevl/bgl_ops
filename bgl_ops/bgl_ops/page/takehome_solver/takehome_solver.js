@@ -32,8 +32,8 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 	var g = $('<div class="ths-grid">\
 		<div><label>Month</label><select id="th-month"></select></div>\
 		<div><label>Solve for</label><select id="th-for">\
-			<option value="basic">Basic (allowances fixed)</option>\
 			<option value="allowances">Allowance split (basic fixed)</option>\
+			<option value="basic">Basic (allowances fixed)</option>\
 			<option value="net">Nothing - just show the net</option></select></div>\
 		<div><label>Agreed take-home (GHS)</label><input type="number" step="0.01" id="th-target"></div>\
 		<div><label>Basic</label><input type="number" step="0.01" id="th-basic"></div>\
@@ -94,7 +94,37 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 				if (m.target) rows += '<tr><td>Agreed figure / off by</td><td>' + fmt(m.target) +
 					' / ' + fmt(m.off_by) + '</td></tr>';
 				out.html('<table>' + rows + '</table>' +
-					'<div class="ths-note">Base take-home only: variable trips/cubic add on top with their overtime tax, and advances, loans or absences come off. That is why the slip net will differ from this figure - correctly.</div>').show();
+					'<div class="ths-note">Base take-home only: variable trips/cubic add on top with their overtime tax, and advances, loans or absences come off. That is why the slip net will differ from this figure - correctly.</div>' +
+					(g.find('#th-for').val() !== 'net'
+						? '<button class="btn btn-sm btn-primary" style="margin-top:10px" id="th-apply">Apply this to payroll...</button>'
+						: '')).show();
+				out.find('#th-apply').on('click', apply_to_payroll);
 			} });
 	});
+	function apply_to_payroll() {
+		if (!last || !emp.get_value()) return;
+		var m = last, month = g.find('#th-month').val();
+		var mi = parseInt(month.slice(5, 7), 10) - 1;
+		var M = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+		var label = M[mi] + ' ' + month.slice(0, 4);
+		frappe.confirm(
+			'Apply to <b>' + label + '</b> payroll for this employee?<br><br>' +
+			'Basic <b>' + fmt(m.basic) + '</b>, Housing <b>' + fmt(m.housing) + '</b>, ' +
+			'Transport <b>' + fmt(m.transport) + '</b>, Extra Duty <b>' + fmt(m.eda) + '</b>.<br><br>' +
+			'This writes the salary assignment and allowance records directly and rebuilds the draft slip. ' +
+			'It refuses if a SUBMITTED slip already exists for that month - the solver never edits paid history.',
+			function() {
+				frappe.call({ method: 'bgl_ops.api.solver_apply',
+					args: { employee: emp.get_value(), month: month, basic: m.basic,
+						housing: m.housing, transport: m.transport, eda: m.eda,
+						note: 'Applied from Take-Home Solver (' + label + ')' },
+					freeze: true, freeze_message: 'Applying to ' + label + '...',
+					callback: function(r) {
+						var msg = 'Applied. ';
+						if (r.message && r.message.new_net != null)
+							msg += 'Draft slip net for ' + label + ' is now ' + fmt(r.message.new_net) + '.';
+						frappe.msgprint({ title: 'Payroll updated', indicator: 'green', message: msg });
+					} });
+			});
+	}
 };

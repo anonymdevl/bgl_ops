@@ -52,11 +52,12 @@ fixtures = [
     {"dt": "Property Setter", "filters": [["doc_type", "in", [
         "Payroll Entry", "Salary Structure Assignment", "Employee",
         "Leave Application", "Leave Allocation", "Purchase Receipt",
-        "Daily Trip Log",
+        "Daily Trip Log", "Salary Slip",
     ]]]},
     {"dt": "Client Script", "filters": [["name", "in", [
         "Daily Trip Log - Auto Cost",
         "Staff Loan Advance - Balance",
+        "BGL Payroll Entry - Accrual Journal",
     ]]]},
     {"dt": "Report", "filters": [["name", "in", [
         "BGL Trip Costing", "BGL Trips - Yesterday", "BGL Leave Balance Board",

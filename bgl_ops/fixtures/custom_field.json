@@ -395,7 +395,7 @@
   "fieldtype": "Date",
   "insert_after": "date_of_joining",
   "depends_on": null,
-  "description": "Set at onboarding. Flexible per employee (1-6 months or anything agreed). The Payroll Prep Sheet flags this employee in the month it falls due so the confirmed salary is applied.",
+  "description": "REQUIRED at onboarding. Set the agreed probation end date (flexible: 1-6 months or anything agreed). If truly none, set the joining date. The Payroll Prep Sheet flags this employee in the month it falls due.",
   "reqd": 0,
   "read_only": 0,
   "hidden": 0,
@@ -403,6 +403,7 @@
   "default": null,
   "options": null,
   "fetch_from": null,
-  "fetch_if_empty": 0
+  "fetch_if_empty": 0,
+  "mandatory_depends_on": "eval:doc.__islocal"
  }
 ]

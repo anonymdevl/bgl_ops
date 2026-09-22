@@ -783,27 +783,52 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		var name = tr.find('td').first().text().trim();
 		var target_input = kind === 'hires' ? tr.find('input.nh-basic') : tr.find('input.bs-new');
 		var ar = holder.find('#dds-allow tbody tr[data-emp="' + emp + '"]');
-		var h = flt(ar.find('input.al-h').val()), t = flt(ar.find('input.al-t').val()),
-			e = flt(ar.find('input.al-e').val());
+		var cur_h = flt(ar.find('input.al-h').val()), cur_t = flt(ar.find('input.al-t').val()),
+			cur_e = flt(ar.find('input.al-e').val());
+		// fixed basic for allowance-split mode: what the row shows today
+		var cur_basic = kind === 'hires'
+			? flt(tr.find('input.nh-basic').val())
+			: (flt(tr.find('input.bs-new').val()) || flt(tr.find('td').eq(2).text().replace(/,/g, '')));
 		var days = kind === 'hires' ? (flt(tr.find('input.nh-days').val()) || 22) : 22;
-		var fields = [{ fieldname: 'target', label: 'Agreed take-home (GHS)', fieldtype: 'Float', reqd: 1 }];
+		var fields = [
+			{ fieldname: 'target', label: 'Agreed take-home (GHS)', fieldtype: 'Float', reqd: 1 },
+			{ fieldname: 'solve_for', label: 'Solve for', fieldtype: 'Select',
+				options: 'Allowance split (basic fixed)\nBasic (allowances fixed)',
+				default: 'Allowance split (basic fixed)' },
+			{ fieldname: 'fixed_basic', label: 'Basic (kept as is)', fieldtype: 'Float',
+				default: cur_basic || null,
+				depends_on: 'eval:doc.solve_for=="Allowance split (basic fixed)"' },
+			{ fieldname: 'split', label: 'Split % (H,T,E)', fieldtype: 'Data', default: '40,30,30',
+				depends_on: 'eval:doc.solve_for=="Allowance split (basic fixed)"' }
+		];
 		if (kind === 'hires' && days < 22) fields.push({
 			fieldname: 'mode', label: 'That figure is', fieldtype: 'Select',
 			options: 'the FULL monthly package\nwhat they actually receive for the ' + days + ' days',
 			default: 'the FULL monthly package' });
 		fields.push({ fieldname: 'out', fieldtype: 'HTML' });
-		var dlg = new frappe.ui.Dialog({ title: 'Solve basic - ' + name, fields: fields,
+		var dlg = new frappe.ui.Dialog({ title: 'Take-home solver - ' + name, fields: fields,
 			primary_action_label: 'Solve', primary_action: function(v) {
 				var part = v.mode && v.mode.indexOf('actually receive') > -1;
-				frappe.call({ method: 'bgl_ops.api.solver_preview',
-					args: { target: v.target, solve_for: 'basic', housing: h, transport: t,
-						eda: e, days: part ? days : null },
+				var allow_mode = v.solve_for !== 'Basic (allowances fixed)';
+				if (allow_mode && !flt(v.fixed_basic)) {
+					frappe.msgprint('Type the basic to keep fixed, or switch Solve for to "Basic (allowances fixed)".');
+					return;
+				}
+				var args = allow_mode
+					? { target: v.target, solve_for: 'allowances', basic: v.fixed_basic,
+						split: v.split || '40,30,30', days: part ? days : null }
+					: { target: v.target, solve_for: 'basic', housing: cur_h, transport: cur_t,
+						eda: cur_e, days: part ? days : null };
+				frappe.call({ method: 'bgl_ops.api.solver_preview', args: args,
 					callback: function(r) {
 						var m = r.message;
 						var fmt = function(x) { return format_number(x, null, 2); };
+						var allow_line = allow_mode
+							? 'Allowances SOLVED (H/T/E: ' + fmt(m.housing) + ' / ' + fmt(m.transport) + ' / ' + fmt(m.eda) + ')'
+							: 'Allowances (from Tab 4: ' + fmt(cur_h) + ' / ' + fmt(cur_t) + ' / ' + fmt(cur_e) + ')';
 						var html = '<table class="table table-sm" style="font-size:12.5px;margin-top:8px">' +
 							'<tr><td><b>Basic salary (goes in the sheet)</b></td><td style="text-align:right"><b>' + fmt(m.basic) + '</b></td></tr>' +
-							'<tr><td>Allowances (from Tab 4: ' + fmt(h) + ' / ' + fmt(t) + ' / ' + fmt(e) + ')</td><td style="text-align:right">' + fmt(m.allowances) + '</td></tr>' +
+							'<tr><td>' + allow_line + '</td><td style="text-align:right">' + fmt(m.allowances) + '</td></tr>' +
 							'<tr><td>SSNIT 5.5% / PAYE</td><td style="text-align:right">-' + fmt(m.ssnit) + ' / -' + fmt(m.paye) + '</td></tr>' +
 							'<tr><td>Full-month base take-home</td><td style="text-align:right">' + fmt(m.net) + '</td></tr>' +
 							(m.part_month_net != null
@@ -812,13 +837,29 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 								: '') +
 							'<tr><td>Agreed figure / off by</td><td style="text-align:right">' + fmt(m.target) + ' / ' + fmt(m.off_by) + '</td></tr>' +
 							'</table><div style="font-size:11.5px;color:var(--text-muted)">Trips/cubic and their overtime tax ride on top of this; advances, loans and absences come off. Nothing is written until you press Use, and nothing is SAVED until Save Prep Sheet - the sign-off covers it like any other edit.</div>' +
-							'<button class="btn btn-sm btn-primary" style="margin-top:8px" id="ths-use">Use ' + fmt(m.basic) + ' as the basic</button>';
+							'<button class="btn btn-sm btn-primary" style="margin-top:8px" id="ths-use">' +
+							(allow_mode ? 'Use these figures (basic + allowance split)' : 'Use ' + fmt(m.basic) + ' as the basic') +
+							'</button>';
 						dlg.get_field('out').$wrapper.html(html);
 						dlg.get_field('out').$wrapper.find('#ths-use').on('click', function() {
 							target_input.val(m.basic).addClass('dirty');
+							var placed_allow = false;
+							if (allow_mode) {
+								if (ar.length) {
+									ar.find('input.al-h').val(m.housing).addClass('dirty');
+									ar.find('input.al-t').val(m.transport).addClass('dirty');
+									ar.find('input.al-e').val(m.eda).addClass('dirty');
+									placed_allow = true;
+								}
+							}
 							totals();
 							dlg.hide();
-							frappe.show_alert({ message: name + ': basic set to ' + fmt(m.basic) + '. Save the prep sheet to keep it.', indicator: 'blue' });
+							var msg = name + ': basic set to ' + fmt(m.basic);
+							if (allow_mode) msg += placed_allow
+								? '; allowances ' + fmt(m.housing) + ' / ' + fmt(m.transport) + ' / ' + fmt(m.eda) + ' placed on the Allowances tab'
+								: '. Could not find their Allowances row - enter H/T/E on Tab 4 by hand';
+							msg += '. Save the prep sheet to keep it all.';
+							frappe.show_alert({ message: msg, indicator: placed_allow || !allow_mode ? 'blue' : 'orange' }, 8);
 						});
 					} });
 			} });
