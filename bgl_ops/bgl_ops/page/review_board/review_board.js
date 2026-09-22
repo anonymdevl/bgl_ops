@@ -125,6 +125,10 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 								var mm = {};
 								(((r2.message || {}).rows) || []).forEach(function(x) { mm[x.employee] = x.missing; });
 								render_advice(sheet, v, label, month, mm);
+							},
+							error: function() {
+								// master lookup unavailable - print anyway with slip-derived detail
+								render_advice(sheet, v, label, month, {});
 							} });
 					} });
 			}

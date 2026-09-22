@@ -1,3 +1,11 @@
+## v1.26.4 - 2026-09-22
+
+- Salary Slip print: fixed the stretched, margin-less rendering in the desk
+  print preview - the slip body now carries its own gutters (max-width 820px,
+  centred, padded) so UI preview and PDF match; logo constrained to 230px max.
+- Bank Advice: if the missing-details lookup errors, the advice still prints
+  using slip-derived detail instead of failing.
+
 ## v1.26.3 - 2026-09-22
 
 - Salary Slip print: adopted the site's existing "Salary Slip - Betonsa v2"
