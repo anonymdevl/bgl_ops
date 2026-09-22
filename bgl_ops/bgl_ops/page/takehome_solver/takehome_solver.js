@@ -43,6 +43,34 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 		<div><label>Split % (H,T,E)</label><input id="th-split" value="40,30,30"></div>\
 	</div>').appendTo(body);
 	fill_months(g.find('#th-month'));
+	function set_off($cell, off) {
+		var $inp = $cell.find('input,select');
+		$inp.prop('disabled', off);
+		$cell.css('opacity', off ? 0.45 : 1);
+		$cell.attr('title', off ? 'Not used in this Solve-for mode' : '');
+	}
+	function update_mode() {
+		var mode = g.find('#th-for').val();
+		var cell = function(sel){ return g.find(sel).closest('div'); };
+		// everything on by default
+		['#th-target','#th-basic','#th-h','#th-t','#th-e','#th-split'].forEach(function(s){ set_off(cell(s), false); });
+		if (mode === 'basic') {
+			// solving Basic: allowances are the fixed inputs; Basic and Split are ignored
+			set_off(cell('#th-basic'), true);
+			set_off(cell('#th-split'), true);
+		} else if (mode === 'allowances') {
+			// solving the allowance pool: Basic + Split are the inputs; H/T/E boxes are ignored
+			set_off(cell('#th-h'), true);
+			set_off(cell('#th-t'), true);
+			set_off(cell('#th-e'), true);
+		} else {
+			// just show the net: all components are inputs; target and split play no part
+			set_off(cell('#th-target'), true);
+			set_off(cell('#th-split'), true);
+		}
+	}
+	g.find('#th-for').on('change', update_mode);
+	update_mode();
 	var out = $('<div class="ths-out" style="display:none"></div>').appendTo(body);
 	var last = null;
 	function args() {

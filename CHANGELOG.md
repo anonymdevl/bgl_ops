@@ -1,3 +1,25 @@
+## 1.22.0 - probation watch
+
+- New "Probation End Date" field on the Employee, set by HR at
+  onboarding. There is no fixed probation length at BGL, so the date is
+  free - one month or six, whatever was agreed for that person.
+- The Monthly Payroll Prep Sheet opens with a Probation Watch banner for
+  the month: everyone whose probation ends inside the payroll month, and
+  anyone overdue (ended recently but still on the old salary - no new
+  Salary Structure Assignment after the end date). The banner walks
+  through what to do: new SSA from the confirmation date, new allowances
+  on the sheet, fx for an agreed take-home.
+- Once the confirmed rate is applied (a newer SSA exists), the overdue
+  flag clears itself.
+
+## 1.21.3 - solver mode clarity
+
+- The Take-Home Solver now greys out the fields the chosen Solve-for
+  mode ignores. Solving Basic disables the Basic box and the Split %;
+  solving the allowance split disables the Housing/Transport/Extra Duty
+  boxes; "just show the net" disables the target and split. No more
+  typing figures the solver silently drops.
+
 ## 1.21.2 - the strike-through bug and slow saves
 
 - Striking a row with x now counts as an edit. Before, the zeroed boxes

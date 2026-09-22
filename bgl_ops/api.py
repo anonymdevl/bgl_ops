@@ -656,6 +656,38 @@ def deduction_sheet(month):
                           GROUP_UNIT.get(e.designation) in ("Trip", "Cubic"))
                  for e in _q("select name, designation from `tabEmployee` where status='Active'")}
 
+    # Probation watch: HR sets custom_probation_end at onboarding (any
+    # length - there is no fixed period). Flag everyone whose probation
+    # ends inside this payroll month, plus anyone overdue (ended in the
+    # last 90 days) who still has no NEW salary assignment dated after
+    # the probation end - i.e. the confirmed rate was never applied.
+    m_start = month + "-01"
+    probation_watch = []
+    for e in _q(
+            """select name, employee_name, designation, branch,
+                      custom_probation_end
+               from `tabEmployee`
+               where status='Active' and ifnull(custom_probation_end,'') != ''
+                 and custom_probation_end <= %(me)s
+                 and custom_probation_end >= date_sub(%(ms)s, interval 90 day)
+               order by custom_probation_end""",
+            {"ms": m_start, "me": m_end}):
+        due_this_month = str(e.custom_probation_end) >= m_start
+        if not due_this_month:
+            # overdue only counts if no SSA was created after probation end
+            newer = _q(
+                """select name from `tabSalary Structure Assignment`
+                   where employee=%(e)s and docstatus=1
+                     and from_date > %(pe)s limit 1""",
+                {"e": e.name, "pe": e.custom_probation_end})
+            if newer:
+                continue   # confirmed rate already applied - drop it
+        probation_watch.append({
+            "employee": e.name, "employee_name": e.employee_name,
+            "designation": e.designation, "branch": e.branch,
+            "probation_end": str(e.custom_probation_end),
+            "overdue": 0 if due_this_month else 1})
+
     return {"month": month, "month_end": m_end, "prev_month_end": prev_end,
             "basics": basics,
             "loans": loans, "drafts": drafts, "prev_advances": prev_adv,
@@ -667,6 +699,7 @@ def deduction_sheet(month):
             "proration_rows": proration_rows,
             "prev_allowances": prev_allow,
             "allowance_drafts": allow_drafts,
+            "probation_watch": probation_watch,
             "ot_locked": ot_locked}
 
 

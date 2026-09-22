@@ -150,6 +150,22 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		var mi = parseInt(state.month.slice(5, 7), 10) - 1;
 		var label = MONTHS[mi] + ' ' + state.month.slice(0, 4);
 		var h = '';
+		if ((d.probation_watch || []).length) {
+			h += '<div style="border:1px solid var(--orange-300,#f6ad55);background:var(--orange-50,#fffaf0);' +
+				'border-radius:10px;padding:10px 14px;margin:6px 0 14px;font-size:13px">' +
+				'<b>Probation watch - ' + label + '</b><br>';
+			d.probation_watch.forEach(function(pw) {
+				h += (pw.overdue ? '&#9888;&#65039; <b>OVERDUE</b> - ' : '&#8226; ') +
+					pw.employee_name + ' <span class="text-muted">(' + (pw.designation || '') +
+					(pw.branch ? ', ' + pw.branch : '') + ')</span> - probation ends ' +
+					frappe.datetime.str_to_user(pw.probation_end) +
+					(pw.overdue ? ' and no new salary assignment exists yet' : '') + '<br>';
+			});
+			h += '<span class="text-muted">If the confirmed salary changes: create the new Salary Structure ' +
+				'Assignment from the confirmation date, and set the new allowances on this sheet ' +
+				'(the &#402;x button beside the basic works the figure backwards from an agreed take-home). ' +
+				'Clear or move the Probation End Date on the Employee once handled.</span></div>';
+		}
 		h += '<div class="dds-pane" data-pane="hires">';
 		h += signoff_bar('New Hire Pro-Ration') + filter_box('hires');
 		if ((d.new_hires || []).length) {
