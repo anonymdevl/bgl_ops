@@ -1008,4 +1008,5 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		fi.trigger('click');
 	}
 
+
 };

@@ -774,4 +774,5 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 			});
 		});
 	}
+
 };

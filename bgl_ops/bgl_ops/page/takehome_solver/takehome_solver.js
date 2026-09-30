@@ -268,4 +268,5 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 					} });
 			});
 	}
+
 };

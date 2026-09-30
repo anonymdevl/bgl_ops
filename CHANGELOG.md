@@ -1,3 +1,25 @@
+## v1.31.0 - 2026-09-30
+
+- BGL Payroll Guide page fully overhauled into the playbook interface:
+  fifteen situation cards, each "do X and Y -> Result Z", grouped Every
+  day / Month end / People changes / Money & exceptions - now including
+  the Trip Log Sheet flows (daily entry, Submit Month + Generate Trip
+  Earnings, Unlock Month corrections, Cubic Override top-ups). The
+  month-in-order strip and the six rules survive from the old guide.
+- The three "How do I...?" dialog buttons removed - the guide page (already
+  linked in the sidebar and from the cockpit) is the playbook's one home.
+- Printable one-pager regenerated to match.
+
+## v1.30.0 - 2026-09-30
+
+- "How do I...?" playbook button on the Prep Sheet, Review & Approve and
+  Take-Home Solver. Eight situations in plain language, each as
+  "do X and Y -> Result Z": run the month, pay a new joiner, give a raise,
+  fix wrong records, close a loan, employee leaving, check numbers safely,
+  chase missing bank details. Kills process ambiguity - the user always
+  knows which action produces which effect.
+- Matching printable one-pager (bgl-payroll-playbook.html) for training.
+
 ## v1.29.0 - 2026-09-30
 
 Inline exception buttons, right where the row lives:
