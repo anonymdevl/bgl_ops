@@ -1,3 +1,11 @@
+## v1.31.1 - 2026-09-30
+
+- Fix: the Close button on the Loans tab was being wiped the instant the
+  sheet rendered - totals() rewrites the "After" cell's text on load and on
+  every keystroke, and the button (added in v1.29.0) lived in that same
+  cell. It now has its own column at the end of each loan row, out of
+  totals()'s reach.
+
 ## v1.31.0 - 2026-09-30
 
 - BGL Payroll Guide page fully overhauled into the playbook interface:

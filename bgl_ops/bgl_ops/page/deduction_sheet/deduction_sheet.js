@@ -231,7 +231,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			'<p class="sect-note">Pre-filled with each loan\'s agreed installment, capped at the balance. Set 0 to skip this month.</p>' +
 			'<table class="dds-t" id="dds-loans"><thead><tr>' +
 			'<th class="l">Employee</th><th>Principal</th><th>Repaid</th><th>Balance</th>' +
-			'<th>Installment</th><th>Deduct this month</th><th class="l">After</th></tr></thead><tbody>';
+			'<th>Installment</th><th>Deduct this month</th><th class="l">After</th><th></th></tr></thead><tbody>';
 		(d.loans || []).forEach(function(l) {
 			var saved = draft_amount('Loans', l.employee);
 			var val = saved !== null ? saved : Math.min(flt(l.expected_monthly) || flt(l.balance), flt(l.balance));
@@ -239,10 +239,11 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 				'<td>' + fmt(l.principal) + '</td><td>' + fmt(l.total_repaid) + '</td>' +
 				'<td>' + fmt(l.balance) + '</td><td>' + fmt(l.expected_monthly) + '</td>' +
 				'<td><input type="number" min="0" step="0.01" class="dl-amt" value="' + flt(val, 2) + '" data-bal="' + flt(l.balance) + '"></td>' +
-				'<td class="l after"><button class="btn btn-xs btn-default dds-settle" title="Close this loan: write off or mark fully paid">Close</button></td></tr>';
+				'<td class="l after"></td>' +
+				'<td><button class="btn btn-xs btn-default dds-settle" title="Close this loan: write off or mark fully paid">Close</button></td></tr>';
 		});
-		if (!(d.loans || []).length) h += '<tr><td class="l" colspan="7">No active loans in the ledger.</td></tr>';
-		h += '<tr class="total"><td class="l">TOTAL LOANS</td><td></td><td></td><td></td><td></td><td id="tot-loans"></td><td></td></tr>';
+		if (!(d.loans || []).length) h += '<tr><td class="l" colspan="8">No active loans in the ledger.</td></tr>';
+		h += '<tr class="total"><td class="l">TOTAL LOANS</td><td></td><td></td><td></td><td></td><td id="tot-loans"></td><td></td><td></td></tr>';
 		h += '</tbody></table>';
 		h += '<button class="btn btn-xs btn-default dds-add" id="add-loan">+ Add loan / advance</button>';
 		h += '</div>';
