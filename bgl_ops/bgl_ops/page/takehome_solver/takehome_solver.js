@@ -2,6 +2,147 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 	var page = frappe.ui.make_app_page({ parent: wrapper,
 		title: 'Take-Home Solver', single_column: true });
 	var body = $('<div style="margin:10px 20px 40px;max-width:860px"></div>').appendTo(page.main);
+	page.add_inner_button('Set / Correct Salary', function() { salary_wizard(); });
+	page.add_inner_button('Employee Leaving', function() { leaving_wizard(); });
+
+	function salary_wizard() {
+		var month = g.find('#th-month').val();
+		var label = g.find('#th-month option:selected').text();
+		var d = new frappe.ui.Dialog({
+			title: 'Set / Correct Salary - ' + label,
+			fields: [
+				{ fieldname: 'employee', label: 'Employee', fieldtype: 'Link',
+					options: 'Employee', reqd: 1, default: emp.get_value() || undefined,
+					get_query: function() { return { filters: { status: 'Active' } }; } },
+				{ fieldname: 'basic', label: 'Agreed BASIC salary (GHS)',
+					fieldtype: 'Float', reqd: 1 },
+				{ fieldname: 'take_home', label: 'Agreed TAKE-HOME (GHS)',
+					fieldtype: 'Float', reqd: 1,
+					description: 'The full monthly package: basic + allowances after taxes, BEFORE trips/cubic and before advances, loans or absences.' },
+				{ fieldname: 'note', fieldtype: 'HTML',
+					options: '<div style="font-size:12px;color:var(--text-muted)">Type the two numbers management agreed. The wizard works out the allowance split, replaces any wrong salary assignment, and fixes the part-month pro-ration for new joiners - nothing else to fill.</div>' }
+			],
+			primary_action_label: 'Preview',
+			primary_action: function(v) {
+				frappe.call({ method: 'bgl_ops.api.set_salary',
+					args: { employee: v.employee, month: month, basic: v.basic,
+						take_home: v.take_home, dry_run: 1 },
+					freeze: true,
+					callback: function(r) {
+						var m = r.message;
+						var fmt = function(x) { return format_number(x, null, 2); };
+						var msg = '<b>' + m.employee_name + '</b> - ' + label +
+							'<table class="table table-sm" style="font-size:12.5px;margin-top:8px">' +
+							'<tr><td>Basic salary</td><td style="text-align:right">' + fmt(m.basic) + '</td></tr>' +
+							'<tr><td>Housing / Transport / Extra Duty</td><td style="text-align:right">' +
+								fmt(m.housing) + ' / ' + fmt(m.transport) + ' / ' + fmt(m.eda) + '</td></tr>' +
+							'<tr><td><b>Full monthly take-home</b></td><td style="text-align:right"><b>' + fmt(m.full_net) + '</b></td></tr>' +
+							(m.proration_amount != null
+								? '<tr><td>New joiner: paid ' + m.days + ' of 22 days, basic prorated to</td>' +
+									'<td style="text-align:right">' + fmt(m.proration_amount) + '</td></tr>' +
+									'<tr><td><b>This month\u2019s base pay (before trips/deductions)</b></td>' +
+									'<td style="text-align:right"><b>' + fmt(m.month_cash) + '</b></td></tr>'
+								: '') +
+							'</table>' +
+							((m.will_replace_ssa || []).length
+								? '<div style="font-size:12px;color:#b7791f">Replaces existing salary assignment: ' +
+									m.will_replace_ssa.map(function(x) { return 'base ' + fmt(x.base) + ' from ' + x.from_date; }).join(', ') + '</div>'
+								: '');
+						frappe.confirm(msg, function() {
+							frappe.call({ method: 'bgl_ops.api.set_salary',
+								args: { employee: v.employee, month: month, basic: v.basic,
+									take_home: v.take_home, dry_run: 0 },
+								freeze: true, freeze_message: 'Applying...',
+								callback: function(r2) {
+									d.hide();
+									frappe.msgprint({ title: 'Salary set', indicator: 'green',
+										message: r2.message.employee_name + ' is set: basic ' +
+											fmt(r2.message.basic) + ', take-home ' + fmt(r2.message.full_net) +
+											'. The prep sheet and payroll will pick it up automatically.' });
+								} });
+						});
+					} });
+			}
+		});
+		d.show();
+	}
+
+	function leaving_wizard() {
+		var d = new frappe.ui.Dialog({
+			title: 'Employee Leaving',
+			size: 'large',
+			fields: [
+				{ fieldname: 'employee', label: 'Employee', fieldtype: 'Link',
+					options: 'Employee', reqd: 1, default: emp.get_value() || undefined,
+					get_query: function() { return { filters: { status: 'Active' } }; } },
+				{ fieldname: 'relieving_date', label: 'Last working day',
+					fieldtype: 'Date', reqd: 1, default: frappe.datetime.get_today() },
+				{ fieldname: 'loan_action', label: 'Outstanding loan becomes',
+					fieldtype: 'Select', options: 'Written Off\nFully Paid',
+					default: 'Written Off', depends_on: 'eval:doc.__has_loans' },
+				{ fieldname: 'body', fieldtype: 'HTML' }
+			],
+			primary_action_label: 'Deactivate Employee',
+			primary_action: function(v) {
+				frappe.confirm(
+					'Deactivate <b>' + (d.__preview ? d.__preview.employee_name : v.employee) +
+					'</b>? Their unpaid pay items will be removed, any active loan marked <b>' +
+					(v.loan_action || 'Written Off') + '</b>, and payroll will exclude them from now on.',
+					function() {
+						frappe.call({ method: 'bgl_ops.api.offboard_apply',
+							args: { employee: v.employee, relieving_date: v.relieving_date,
+								loan_action: v.loan_action || 'Written Off' },
+							freeze: true, freeze_message: 'Offboarding...',
+							callback: function(r) {
+								d.hide();
+								frappe.msgprint({ title: 'Done', indicator: 'green',
+									message: r.message.employee_name + ' is now Inactive.<br><br>' +
+										r.message.made.map(function(x) { return '&bull; ' + frappe.utils.escape_html(x); }).join('<br>') });
+							} });
+					});
+			}
+		});
+		function load_preview() {
+			var empv = d.get_value('employee');
+			if (!empv) return;
+			frappe.call({ method: 'bgl_ops.api.offboard_preview',
+				args: { employee: empv },
+				callback: function(r) {
+					var m = r.message; d.__preview = m;
+					d.doc.__has_loans = (m.loans || []).length ? 1 : 0;
+					d.refresh();
+					var fmt = function(x) { return format_number(x, null, 2); };
+					var h = '<div style="font-size:12.5px">';
+					h += m.last_slip
+						? '<div>&#x2705; Last submitted slip: <b>' + m.last_slip.name + '</b> (net ' + fmt(m.last_slip.net_pay) + ')</div>'
+						: '<div>&#x26A0;&#xFE0F; No submitted salary slip on record.</div>';
+					if ((m.draft_slips || []).length)
+						h += '<div style="color:#c0392b">&#x274C; DRAFT slip exists (' +
+							m.draft_slips.map(function(x) { return x.name; }).join(', ') +
+							') - settle their final pay first. The wizard will refuse until then.</div>';
+					if ((m.pending_ads || []).length) {
+						h += '<div style="margin-top:6px"><b>Unpaid pay items that will be removed:</b></div>';
+						m.pending_ads.forEach(function(a) {
+							h += '<div>&bull; ' + a.salary_component + ' ' + fmt(a.amount) + ' (' + a.payroll_date + ')</div>';
+						});
+					}
+					if ((m.loans || []).length) {
+						h += '<div style="margin-top:6px"><b>Active loans:</b></div>';
+						m.loans.forEach(function(l) {
+							h += '<div>&bull; ' + l.name + ': taken ' + fmt(l.principal) +
+								', repaid ' + fmt(l.repaid) + ', <b>balance ' + fmt(l.balance) + '</b></div>';
+						});
+					} else {
+						h += '<div style="margin-top:6px">No active loans.</div>';
+					}
+					h += '</div>';
+					d.fields_dict.body.$wrapper.html(h);
+				} });
+		}
+		d.fields_dict.employee.$input.on('change', function() { setTimeout(load_preview, 400); });
+		d.show();
+		if (emp.get_value()) setTimeout(load_preview, 400);
+	}
 	$('<style>\
 		.ths-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}\
 		.ths-grid label{font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px}\
@@ -13,7 +154,7 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 		.ths-hit{color:var(--green-600);font-weight:700}.ths-miss{color:var(--orange-500);font-weight:700}\
 		.ths-note{font-size:12px;color:var(--text-muted);margin-top:8px}\
 	</style>').appendTo(body);
-	body.append('<p style="font-size:13px;color:var(--text-muted)">Management agrees a take-home; this screen works the payroll backwards. Pick what the system should solve <b>for</b>, press Solve, check the slip math, This page is a CALCULATOR only - to put a solved figure into payroll, use the &#402;x button beside the basic on the Payroll Prep sheet, so the save and sign-off flow cover it. Trips and cubic always ride on top, so the final slip net still varies with the month.</p>');
+	body.append('<p style="font-size:13px;color:var(--text-muted)">Management agrees a take-home; this screen works the payroll backwards. Pick what the system should solve <b>for</b>, press Solve, check the slip math, To make it real, use the buttons above: <b>Set / Correct Salary</b> applies a package (fixing wrong assignments and new-joiner pro-ration automatically), and <b>Employee Leaving</b> retires someone safely - final-pay check, unpaid items, loan settlement, deactivation. The &#402;x button on the Payroll Prep sheet does the same salary apply from inside the sheet. Trips and cubic always ride on top, so the final slip net still varies with the month.</p>');
 	var emp_wrap = $('<div style="max-width:340px"></div>').appendTo(body);
 	var emp = frappe.ui.form.make_control({
 		parent: emp_wrap, render_input: true,

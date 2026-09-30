@@ -1,3 +1,88 @@
+## v1.29.0 - 2026-09-30
+
+Inline exception buttons, right where the row lives:
+
+- Hires tab: a "Fix" button beside each new hire's take-home. When records
+  already exist wrongly (wrong basic applied, missing allowances), it takes
+  the two numbers typed in the row, previews the correction (including any
+  wrong assignment it will replace), and on confirm replaces the SSA,
+  writes the allowance split, corrects the pro-ration and reloads the
+  sheet. Same engine as the Set / Correct Salary wizard.
+- Loans tab: a "Close" button on every loan row. Shows the outstanding
+  balance, asks Written Off (company's loss) or Fully Paid, removes this
+  month's planned deduction and draft, stamps a dated note, and the loan
+  leaves the sheet. New API settle_loan.
+- Confirmed: an existing employee's raise is already automatic - fx on the
+  Basics tab -> Use -> Save creates the new assignment from the 1st and
+  upserts the allowance drafts. The Fix/wizard path covers the one edge
+  (re-correcting twice in the same month, where plain save refuses).
+
+## v1.28.0 - 2026-09-30
+
+- New Hire Pro-Ration tab now does the allowance split BY ITSELF. New
+  "Agreed take-home" column beside the basic: on save, the sheet solves the
+  Housing/Transport/Extra Duty split (full monthly package, basic fixed,
+  40/30/30), writes the three overwrite drafts alongside the basic
+  proration and the SSA, and refuses with a clear line if the take-home is
+  below what the basic alone pays. Leave the column empty to handle
+  allowances manually (old behaviour).
+- The hires ƒx solver's "Use" now records the take-home into that column,
+  so the split saves even though a brand-new hire has no Allowances-tab
+  row yet (the old gap that left September's three joiners with no
+  allowances at all).
+
+## v1.27.2 - 2026-09-30
+
+- Take-Home Solver: part-month model corrected and verified against a real
+  slip. ERPNext taxes the PRORATED basic (the overwrite ADS becomes the
+  slip's Basic, and SSNIT/PAYE compute on it) - confirmed penny-exact
+  against Emmanuel Botchway's August slip (SSNIT 55.00, PAYE 110.55, net
+  1,145.45 + cubic). Both part-month modes now solve on the prorated basic;
+  previously they taxed the full basic and subtracted the proration after,
+  which overtaxed and could miss the target for joiners with few days.
+  set_salary's "this month's base pay" preview uses the same corrected math.
+- Full-month solving (the default, and everything the wizards write) was
+  verified unchanged and correct: 6,000 randomized cases + real August
+  ground truths, all within one pesewa; splits never interchange.
+
+## v1.27.1 - 2026-09-30
+
+- Both correction wizards ("Set / Correct Salary", "Employee Leaving") now
+  also live on the Take-Home Solver page in the sidebar, prefilled with the
+  employee already loaded there - so all corrections (pro-ration, salary
+  change, offboarding/loan settlement) happen from the one tool the team
+  already knows. Solver intro text updated: no longer "calculator only".
+
+## v1.27.0 - 2026-09-30
+
+Two self-service wizards on Review & Approve, so exceptions no longer need
+anyone to understand SSAs or ADS:
+
+- "Set / Correct Salary": pick an employee, type the agreed BASIC and
+  TAKE-HOME (full monthly package - before trips and deductions). Preview
+  shows the solved allowance split, the full net, and the new-joiner
+  proration (weekdays/22). Apply replaces any wrong salary assignment from
+  the month forward, writes the H/T/E overwrite ADS, corrects the proration
+  draft and rebuilds the draft slip. Refuses months with a submitted slip.
+- "Employee Leaving": pick the employee and the wizard shows the checklist -
+  last submitted slip, any draft slip (it refuses until final pay is
+  settled), the unpaid pay items it will remove, and active loans with
+  taken/repaid/balance. Choose Written Off or Fully Paid for the loan,
+  confirm, and it removes unpaid ADS, settles the loan with a dated note,
+  and sets the employee Inactive with the relieving date.
+- New APIs: set_salary (with dry_run preview), offboard_preview,
+  offboard_apply.
+
+## v1.26.5 - 2026-09-22
+
+- Bank Advice: the letter now prints through a hidden iframe instead of
+  window.open, which browsers popup-block when triggered from a server
+  callback - this is why Generate appeared to do nothing. Also refuses
+  cleanly with a message when the month has no salary slips yet.
+- Missing Bank Details: now opens in a proper dialog with a "Download CSV"
+  button (Employee ID, Name, Branch, Designation, Missing Fields) so the
+  accountant can hand HR the list.
+
 ## v1.26.4 - 2026-09-22
 
 - Salary Slip print: fixed the stretched, margin-less rendering in the desk

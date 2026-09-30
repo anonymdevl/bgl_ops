@@ -43,6 +43,148 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 
 	page.add_inner_button('Bank Advice (Print)', function() { bank_advice(); });
 	page.add_inner_button('Missing Bank Details', function() { missing_details(); });
+	page.add_inner_button('Set / Correct Salary', function() { salary_wizard(); });
+	page.add_inner_button('Employee Leaving', function() { leaving_wizard(); });
+
+	function salary_wizard() {
+		var month = ym();
+		var mi = parseInt(month.slice(5, 7), 10) - 1;
+		var label = MONTHS[mi] + ' ' + month.slice(0, 4);
+		var d = new frappe.ui.Dialog({
+			title: 'Set / Correct Salary - ' + label,
+			fields: [
+				{ fieldname: 'employee', label: 'Employee', fieldtype: 'Link',
+					options: 'Employee', reqd: 1,
+					get_query: function() { return { filters: { status: 'Active' } }; } },
+				{ fieldname: 'basic', label: 'Agreed BASIC salary (GHS)',
+					fieldtype: 'Float', reqd: 1 },
+				{ fieldname: 'take_home', label: 'Agreed TAKE-HOME (GHS)',
+					fieldtype: 'Float', reqd: 1,
+					description: 'The full monthly package: basic + allowances after taxes, BEFORE trips/cubic and before advances, loans or absences.' },
+				{ fieldname: 'note', fieldtype: 'HTML',
+					options: '<div style="font-size:12px;color:var(--text-muted)">Type the two numbers management agreed. The wizard works out the allowance split, replaces any wrong salary assignment, and fixes the part-month proration for new joiners - nothing else to fill.</div>' }
+			],
+			primary_action_label: 'Preview',
+			primary_action: function(v) {
+				frappe.call({ method: 'bgl_ops.api.set_salary',
+					args: { employee: v.employee, month: month, basic: v.basic,
+						take_home: v.take_home, dry_run: 1 },
+					freeze: true,
+					callback: function(r) {
+						var m = r.message;
+						var fmt = function(x) { return format_number(x, null, 2); };
+						var msg = '<b>' + m.employee_name + '</b> - ' + label +
+							'<table class="table table-sm" style="font-size:12.5px;margin-top:8px">' +
+							'<tr><td>Basic salary</td><td style="text-align:right">' + fmt(m.basic) + '</td></tr>' +
+							'<tr><td>Housing / Transport / Extra Duty</td><td style="text-align:right">' +
+								fmt(m.housing) + ' / ' + fmt(m.transport) + ' / ' + fmt(m.eda) + '</td></tr>' +
+							'<tr><td><b>Full monthly take-home</b></td><td style="text-align:right"><b>' + fmt(m.full_net) + '</b></td></tr>' +
+							(m.proration_amount != null
+								? '<tr><td>New joiner: paid ' + m.days + ' of 22 days, basic prorated to</td>' +
+									'<td style="text-align:right">' + fmt(m.proration_amount) + '</td></tr>' +
+									'<tr><td><b>This month\u2019s base pay (before trips/deductions)</b></td>' +
+									'<td style="text-align:right"><b>' + fmt(m.month_cash) + '</b></td></tr>'
+								: '') +
+							'</table>' +
+							((m.will_replace_ssa || []).length
+								? '<div style="font-size:12px;color:#b7791f">Replaces existing salary assignment: ' +
+									m.will_replace_ssa.map(function(x) { return 'base ' + fmt(x.base) + ' from ' + x.from_date; }).join(', ') + '</div>'
+								: '');
+						frappe.confirm(msg, function() {
+							frappe.call({ method: 'bgl_ops.api.set_salary',
+								args: { employee: v.employee, month: month, basic: v.basic,
+									take_home: v.take_home, dry_run: 0 },
+								freeze: true, freeze_message: 'Applying...',
+								callback: function(r2) {
+									d.hide();
+									frappe.msgprint({ title: 'Salary set', indicator: 'green',
+										message: r2.message.employee_name + ' is set: basic ' +
+											fmt(r2.message.basic) + ', take-home ' + fmt(r2.message.full_net) +
+											'. The prep sheet and payroll will pick it up automatically.' });
+								} });
+						});
+					} });
+			}
+		});
+		d.show();
+	}
+
+	function leaving_wizard() {
+		var d = new frappe.ui.Dialog({
+			title: 'Employee Leaving',
+			size: 'large',
+			fields: [
+				{ fieldname: 'employee', label: 'Employee', fieldtype: 'Link',
+					options: 'Employee', reqd: 1,
+					get_query: function() { return { filters: { status: 'Active' } }; } },
+				{ fieldname: 'relieving_date', label: 'Last working day',
+					fieldtype: 'Date', reqd: 1, default: frappe.datetime.get_today() },
+				{ fieldname: 'loan_action', label: 'Outstanding loan becomes',
+					fieldtype: 'Select', options: 'Written Off\nFully Paid',
+					default: 'Written Off', depends_on: 'eval:doc.__has_loans' },
+				{ fieldname: 'body', fieldtype: 'HTML' }
+			],
+			primary_action_label: 'Deactivate Employee',
+			primary_action: function(v) {
+				frappe.confirm(
+					'Deactivate <b>' + (d.__preview ? d.__preview.employee_name : v.employee) +
+					'</b>? Their unpaid pay items will be removed, any active loan marked <b>' +
+					(v.loan_action || 'Written Off') + '</b>, and payroll will exclude them from now on.',
+					function() {
+						frappe.call({ method: 'bgl_ops.api.offboard_apply',
+							args: { employee: v.employee, relieving_date: v.relieving_date,
+								loan_action: v.loan_action || 'Written Off' },
+							freeze: true, freeze_message: 'Offboarding...',
+							callback: function(r) {
+								d.hide();
+								frappe.msgprint({ title: 'Done', indicator: 'green',
+									message: r.message.employee_name + ' is now Inactive.<br><br>' +
+										r.message.made.map(function(x) { return '&bull; ' + frappe.utils.escape_html(x); }).join('<br>') });
+							} });
+					});
+			}
+		});
+		d.fields_dict.employee.$input.on('change', function() {
+			setTimeout(function() {
+				var empv = d.get_value('employee');
+				if (!empv) return;
+				frappe.call({ method: 'bgl_ops.api.offboard_preview',
+					args: { employee: empv },
+					callback: function(r) {
+						var m = r.message; d.__preview = m;
+						d.doc.__has_loans = (m.loans || []).length ? 1 : 0;
+						d.refresh();
+						var fmt = function(x) { return format_number(x, null, 2); };
+						var h = '<div style="font-size:12.5px">';
+						h += m.last_slip
+							? '<div>&#x2705; Last submitted slip: <b>' + m.last_slip.name + '</b> (net ' + fmt(m.last_slip.net_pay) + ')</div>'
+							: '<div>&#x26A0;&#xFE0F; No submitted salary slip on record.</div>';
+						if ((m.draft_slips || []).length)
+							h += '<div style="color:#c0392b">&#x274C; DRAFT slip exists (' +
+								m.draft_slips.map(function(x) { return x.name; }).join(', ') +
+								') - settle their final pay first. The wizard will refuse until then.</div>';
+						if ((m.pending_ads || []).length) {
+							h += '<div style="margin-top:6px"><b>Unpaid pay items that will be removed:</b></div>';
+							m.pending_ads.forEach(function(a) {
+								h += '<div>&bull; ' + a.salary_component + ' ' + fmt(a.amount) + ' (' + a.payroll_date + ')</div>';
+							});
+						}
+						if ((m.loans || []).length) {
+							h += '<div style="margin-top:6px"><b>Active loans:</b></div>';
+							m.loans.forEach(function(l) {
+								h += '<div>&bull; ' + l.name + ': taken ' + fmt(l.principal) +
+									', repaid ' + fmt(l.repaid) + ', <b>balance ' + fmt(l.balance) + '</b></div>';
+							});
+						} else {
+							h += '<div style="margin-top:6px">No active loans.</div>';
+						}
+						h += '</div>';
+						d.fields_dict.body.$wrapper.html(h);
+					} });
+			}, 400);
+		});
+		d.show();
+	}
 
 	function amount_words(n) {
 		var ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
@@ -160,7 +302,7 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 				var h = '<p><b>' + m.count + ' Active employee(s)</b> cannot be paid through a bank advice yet. ' +
 					'HR must complete these fields on the <b>Employee master (Salary Information section)</b>: ' +
 					'<b>Salary Mode = Bank</b>, <b>Bank Name</b>, <b>Bank A/C No.</b></p>' +
-					'<table class="table table-bordered" style="font-size:12px"><thead><tr>' +
+					'<div style="max-height:50vh;overflow:auto"><table class="table table-bordered" style="font-size:12px"><thead><tr>' +
 					'<th>Employee</th><th>Branch</th><th>Missing</th></tr></thead><tbody>';
 				(m.rows || []).forEach(function(x) {
 					h += '<tr><td><a href="/app/employee/' + x.employee + '" target="_blank">' +
@@ -168,13 +310,38 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 						'<td>' + frappe.utils.escape_html(x.branch || '') + '</td>' +
 						'<td>' + frappe.utils.escape_html((x.missing || []).join(', ')) + '</td></tr>';
 				});
-				h += '</tbody></table>';
-				frappe.msgprint({ title: 'Missing salary payment details', indicator: 'orange', message: h, wide: true });
+				h += '</tbody></table></div>';
+				var d = new frappe.ui.Dialog({
+					title: 'Missing salary payment details',
+					size: 'large',
+					fields: [{ fieldname: 'body', fieldtype: 'HTML' }],
+					primary_action_label: 'Download CSV',
+					primary_action: function() {
+						var csv = 'Employee ID,Employee Name,Branch,Designation,Missing Fields\n';
+						(m.rows || []).forEach(function(x) {
+							var cell = function(t) { return '"' + String(t || '').replace(/"/g, '""') + '"'; };
+							csv += [cell(x.employee), cell(x.employee_name), cell(x.branch),
+								cell(x.designation), cell((x.missing || []).join(' + '))].join(',') + '\n';
+						});
+						var blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+						var a = document.createElement('a');
+						a.href = URL.createObjectURL(blob);
+						a.download = 'missing-bank-details-' + frappe.datetime.get_today() + '.csv';
+						document.body.appendChild(a); a.click(); a.remove();
+					}
+				});
+				d.fields_dict.body.$wrapper.html(h);
+				d.show();
 			} });
 	}
 
 	function render_advice(m, v, label, month, master_missing) {
 		master_missing = master_missing || {};
+		if (!((m.rows || []).length)) {
+			frappe.msgprint({ title: 'Nothing to print', indicator: 'orange',
+				message: 'No salary slips exist for ' + label + ' yet. Run the payroll first - the advice is built from submitted slips.' });
+			return;
+		}
 		if (m.draft_count) {
 			frappe.msgprint({ title: 'Not ready for the bank', indicator: 'orange',
 				message: m.draft_count + ' slip(s) for ' + label + ' are still DRAFTS. ' +
@@ -272,9 +439,22 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 		}
 		h += '<div class="foot">BetonSA Ghana Ltd. &bull; Behind New China Mall Airport, Airport Spintex Road, Accra - Ghana &bull; +233 55 140 0444 &bull; betonsa.com.gh</div>';
 		h += '</body></html>';
-		var w = window.open('', '_blank');
-		w.document.write(h); w.document.close();
-		setTimeout(function() { w.print(); }, 400);
+		print_html(h);
+	}
+
+	function print_html(h) {
+		// window.open from an async callback gets popup-blocked; a hidden
+		// iframe prints reliably without any popup.
+		var f = document.createElement('iframe');
+		f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+		document.body.appendChild(f);
+		var doc = f.contentWindow.document;
+		doc.open(); doc.write(h); doc.close();
+		setTimeout(function() {
+			try { f.contentWindow.focus(); f.contentWindow.print(); }
+			catch (e) { frappe.msgprint('Could not open the print dialog: ' + e); }
+			setTimeout(function() { f.remove(); }, 60000);
+		}, 600);
 	}
 
 	var body = $('<div style="margin:10px 20px 40px"></div>').appendTo(page.main);

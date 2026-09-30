@@ -1038,6 +1038,29 @@ def deduction_save(month, loans=None, advances=None, absences=None,
             note_skip(act, emp, "new hire pro-ration")
             if act in ("created", "updated"):
                 out["new_hires"] += 1
+            # Agreed take-home typed on the hires tab: solve the allowance
+            # split automatically (full monthly package, basic fixed, 40/30/30)
+            th = flt(row.get("take_home") or 0)
+            if th > 0:
+                floor = _slip_math(actual, 0)["net"]
+                if th < floor:
+                    out["errors"].append(
+                        f"New hire {emp}: take-home {flt(th, 2)} is below what "
+                        f"the basic alone already pays ({floor}) - not split")
+                else:
+                    pool = _solve_var(th, lambda x: _slip_math(actual, x)["net"])
+                    t_a = round(pool * 0.3, 2)
+                    e_a = round(pool * 0.3, 2)
+                    h_a = round(pool - t_a - e_a, 2)
+                    for comp, amt in zip(_ALLOW_COMPONENTS, [h_a, t_a, e_a]):
+                        act2 = _upsert_deduction_draft(
+                            emp, comp, amt, m_end,
+                            f"Auto allowance split {month_label}: take-home "
+                            f"{flt(th, 2)} with basic {flt(actual, 2)}",
+                            overwrite=1)
+                        note_skip(act2, emp, comp)
+                        if act2 in ("created", "updated"):
+                            out["allowances"] += 1
         except Exception as ex:
             out["errors"].append(f"New hire {row.get('employee')}: {ex}")
 
@@ -2316,6 +2339,13 @@ def _solve_var(target, fn, hi_start=100000.0):
     """Bisection + penny scan: smallest x (2dp) whose fn(x) hits target."""
     target = _flt(target)
     lo, hi = 0.0, hi_start
+    # widen the search if the target sits above the ceiling (e.g. huge
+    # basic implied by a part-month target over very few days)
+    while fn(hi) < target and hi < 1e8:
+        hi *= 10
+    if fn(hi) < target:
+        frappe.throw('That target is not reachable with these inputs - '
+                     'check the figures.')
     for _ in range(80):
         mid = (lo + hi) / 2.0
         if fn(mid) < target:
@@ -2350,27 +2380,27 @@ def solver_preview(employee=None, target=None, solve_for='basic', basic=None,
         allow = h + t + e
         d = _flt(days)
         if d and d < 22:
-            frac = (22.0 - d) / 22.0
-            fn = lambda x: round(_slip_math(x, allow)['net'] - round(x * frac, 2), 2)
+            # The slip taxes the PRORATED basic (overwrite ADS), so solve on it.
+            fn = lambda x: _slip_math(round(x * d / 22.0, 2), allow)['net']
         else:
             fn = lambda x: _slip_math(x, allow)['net']
         b = _solve_var(target, fn)
         m = _slip_math(b, allow)
         m.update({'housing': h, 'transport': t, 'eda': e})
         if d and d < 22:
+            part = _slip_math(round(b * d / 22.0, 2), allow)['net']
             m['days'] = d
-            m['proration_deduction'] = round(b * (22.0 - d) / 22.0, 2)
-            m['part_month_net'] = round(m['net'] - m['proration_deduction'], 2)
+            m['part_month_net'] = part
+            m['proration_deduction'] = round(m['net'] - part, 2)
     elif solve_for == 'allowances':
         if not _flt(basic):
             frappe.throw('Fix the basic salary first, then solve for allowances.')
         d = _flt(days)
         if d and d < 22:
-            # Target is the part-month cash for d days: basic is prorated
-            # (allowances are not), so solve the allowance pool against
-            # net minus the basic proration deduction.
-            pro = round(_flt(basic) * (22.0 - d) / 22.0, 2)
-            A = _solve_var(target, lambda x: round(_slip_math(basic, x)['net'] - pro, 2))
+            # The slip taxes the PRORATED basic (overwrite ADS), so solve the
+            # allowance pool against the net of (basic*d/22 + allowances).
+            pro_b = round(_flt(basic) * d / 22.0, 2)
+            A = _solve_var(target, lambda x: _slip_math(pro_b, x)['net'])
         else:
             A = _solve_var(target, lambda x: _slip_math(basic, x)['net'])
         try:
@@ -2384,9 +2414,10 @@ def solver_preview(employee=None, target=None, solve_for='basic', basic=None,
         m = _slip_math(basic, A)
         m.update({'housing': h, 'transport': t, 'eda': e})
         if d and d < 22:
+            part = _slip_math(pro_b, A)['net']
             m['days'] = d
-            m['proration_deduction'] = pro
-            m['part_month_net'] = round(m['net'] - pro, 2)
+            m['part_month_net'] = part
+            m['proration_deduction'] = round(m['net'] - part, 2)
     else:
         frappe.throw('Unknown solve_for: ' + str(solve_for))
     m['achieved'] = m.get('part_month_net', m['net'])
@@ -2626,3 +2657,259 @@ def create_accrual_journal(payroll_entry):
                      'the company.'.format(e))
     return {'journal': getattr(jv, 'name', None) or str(jv),
             'message': 'Accrual journal created for {0}.'.format(doc.name)}
+
+
+def _weekdays_between(d1, d2):
+    n, d = 0, getdate(d1)
+    d2 = getdate(d2)
+    while d <= d2:
+        if d.weekday() < 5:
+            n += 1
+        d = add_days(d, 1)
+    return n
+
+
+@frappe.whitelist()
+def set_salary(employee, month, basic, take_home, dry_run=0):
+    """Guided wizard: set or CORRECT an employee's package from two numbers.
+
+    basic = agreed basic salary; take_home = agreed full-month package
+    (basic + allowances after SSNIT/PAYE, before trips and deductions).
+    Replaces any submitted SSA from this month forward (fixes wrong ones),
+    writes the solved allowance splits as overwrite ADS, corrects the
+    mid-month proration draft, and rebuilds the draft slip if one exists.
+    """
+    _require_access()
+    basic, take_home, dry_run = _flt(basic), _flt(take_home), cint(dry_run)
+    m_start, m_end = _month_bounds(month)
+    emp = frappe.get_doc('Employee', employee)
+    if frappe.db.exists('Salary Slip', {'employee': employee,
+                                        'start_date': m_start, 'docstatus': 1}):
+        frappe.throw('%s already has a SUBMITTED salary slip for %s. '
+                     'The wizard never edits paid history.'
+                     % (emp.employee_name, month))
+    if basic <= 0:
+        frappe.throw('Enter the agreed basic salary.')
+    floor = _slip_math(basic, 0)['net']
+    if take_home < floor:
+        frappe.throw('A basic of GHS {0:,.2f} alone already gives a take-home '
+                     'of GHS {1:,.2f} - the agreed take-home must be at least '
+                     'that.'.format(basic, floor))
+    from_date = max(getdate(m_start), getdate(emp.date_of_joining))
+    # Solve the allowance pool (full-month package, 40/30/30)
+    A = _solve_var(take_home, lambda x: _slip_math(basic, x)['net'])
+    t = round(A * 0.3, 2)
+    e = round(A * 0.3, 2)
+    h = round(A - t - e, 2)
+    # Mid-month proration (weekdays from joining to month end, over 22)
+    days = 22
+    pro_amount = None
+    if getdate(emp.date_of_joining) > getdate(m_start):
+        days = min(22, _weekdays_between(from_date, m_end))
+        if days < 22:
+            pro_amount = round(basic * days / 22.0, 2)
+    out = {'employee': employee, 'employee_name': emp.employee_name,
+           'month': month, 'basic': basic, 'housing': h, 'transport': t,
+           'eda': e, 'full_net': _slip_math(basic, h + t + e)['net'],
+           'days': days, 'proration_amount': pro_amount,
+           'month_cash': _slip_math(pro_amount, h + t + e)['net']
+           if pro_amount is not None else _slip_math(basic, h + t + e)['net'],
+           'made': []}
+    if dry_run:
+        old = frappe.get_all('Salary Structure Assignment',
+            filters={'employee': employee, 'docstatus': 1,
+                     'from_date': ['>=', str(from_date)]},
+            fields=['name', 'base', 'from_date'])
+        out['will_replace_ssa'] = old
+        return out
+    # 1) Replace any submitted SSA from this month forward (wrong ones included)
+    tpl = frappe.get_all('Salary Structure Assignment',
+        filters={'employee': employee, 'docstatus': 1},
+        fields=['name', 'from_date', 'salary_structure', 'income_tax_slab',
+                'payroll_payable_account', 'company'],
+        order_by='from_date desc', limit=1)
+    if not tpl:
+        frappe.throw('%s has no salary structure assignment to model on. '
+                     'Assign the Main Structure once first.' % emp.employee_name)
+    tpl = tpl[0]
+    for old in frappe.get_all('Salary Structure Assignment',
+            filters={'employee': employee, 'docstatus': 1,
+                     'from_date': ['>=', str(from_date)]}, pluck='name'):
+        frappe.get_doc('Salary Structure Assignment', old).cancel()
+        out['made'].append('cancelled ' + old)
+    ssa = frappe.new_doc('Salary Structure Assignment')
+    ssa.update({'employee': employee, 'salary_structure': tpl.salary_structure,
+                'from_date': str(from_date), 'income_tax_slab': tpl.income_tax_slab,
+                'payroll_payable_account': tpl.payroll_payable_account,
+                'company': tpl.company, 'base': basic})
+    ssa.insert()
+    ssa.submit()
+    out['made'].append('SSA %s base %s from %s' % (ssa.name, basic, from_date))
+    # 2) Allowance splits as overwrite ADS (replace drafts and submitted alike)
+    for comp, amt in zip(_ALLOW_COMPONENTS, [h, t, e]):
+        for row in frappe.get_all('Additional Salary',
+                filters={'employee': employee, 'salary_component': comp,
+                         'docstatus': ['<', 2],
+                         'payroll_date': ['between', [m_start, m_end]]},
+                fields=['name', 'docstatus']):
+            if row.docstatus == 1:
+                frappe.get_doc('Additional Salary', row.name).cancel()
+                out['made'].append('cancelled ' + row.name)
+            else:
+                frappe.delete_doc('Additional Salary', row.name, force=1)
+                out['made'].append('deleted draft ' + row.name)
+        ads = frappe.new_doc('Additional Salary')
+        ads.update({'employee': employee, 'salary_component': comp,
+                    'amount': amt, 'payroll_date': m_end, 'company': emp.company,
+                    'overwrite_salary_structure_amount': 1,
+                    'custom_bgl_note': 'Set by Salary Wizard'})
+        ads.insert()
+        ads.submit()
+        out['made'].append('%s %s' % (comp, amt))
+    # 3) Correct the mid-month proration draft (Basic Salary overwrite)
+    if pro_amount is not None:
+        row = frappe.get_all('Additional Salary',
+            filters={'employee': employee, 'salary_component': 'Basic Salary',
+                     'docstatus': 0,
+                     'payroll_date': ['between', [m_start, m_end]]},
+            pluck='name')
+        if row:
+            frappe.db.set_value('Additional Salary', row[0], 'amount', pro_amount)
+            out['made'].append('proration %s -> %s' % (row[0], pro_amount))
+        else:
+            ads = frappe.new_doc('Additional Salary')
+            ads.update({'employee': employee, 'salary_component': 'Basic Salary',
+                        'amount': pro_amount, 'payroll_date': m_end,
+                        'company': emp.company,
+                        'overwrite_salary_structure_amount': 1,
+                        'custom_bgl_note':
+                            'Proration %s/22 days (Salary Wizard)' % days})
+            ads.insert()
+            out['made'].append('proration draft created %s' % pro_amount)
+    # 4) Rebuild draft slip if the month already has one
+    new_net = _rebuild_draft_slip(employee, m_start, m_end, emp.company)
+    out['new_net'] = new_net
+    return out
+
+
+@frappe.whitelist()
+def offboard_preview(employee):
+    """Everything the accountant must know before deactivating a leaver."""
+    _require_access()
+    emp = frappe.get_doc('Employee', employee)
+    last = frappe.get_all('Salary Slip',
+        filters={'employee': employee, 'docstatus': 1},
+        fields=['name', 'start_date', 'end_date', 'net_pay'],
+        order_by='start_date desc', limit=1)
+    last = last[0] if last else None
+    draft_slips = frappe.get_all('Salary Slip',
+        filters={'employee': employee, 'docstatus': 0},
+        fields=['name', 'start_date'])
+    cutoff = str(last.end_date) if last else '1900-01-01'
+    pending = frappe.get_all('Additional Salary',
+        filters={'employee': employee, 'docstatus': ['<', 2],
+                 'payroll_date': ['>', cutoff]},
+        fields=['name', 'salary_component', 'amount', 'payroll_date', 'docstatus'],
+        order_by='payroll_date')
+    loans = []
+    for l in frappe.get_all('Staff Loan Advance',
+            filters={'employee': employee, 'status': 'Active'},
+            fields=['name', 'principal', 'loan_type']):
+        repaid = sum(_flt(r.amount) for r in frappe.get_all('Staff Loan Repayment',
+            filters={'parent': l.name}, fields=['amount']))
+        loans.append({'name': l.name, 'loan_type': l.loan_type,
+                      'principal': _flt(l.principal), 'repaid': round(repaid, 2),
+                      'balance': round(_flt(l.principal) - repaid, 2)})
+    return {'employee': employee, 'employee_name': emp.employee_name,
+            'status': emp.status, 'designation': emp.designation,
+            'branch': emp.branch,
+            'last_slip': last, 'draft_slips': draft_slips,
+            'pending_ads': pending, 'loans': loans}
+
+
+@frappe.whitelist()
+def offboard_apply(employee, relieving_date, loan_action='Written Off'):
+    """Deactivate a leaver safely: refuse while a draft slip exists, remove
+    pay items for months not yet paid, settle Active loans, set Inactive."""
+    _require_access()
+    if loan_action not in ('Written Off', 'Fully Paid'):
+        frappe.throw('Loan action must be Written Off or Fully Paid.')
+    emp = frappe.get_doc('Employee', employee)
+    drafts = frappe.get_all('Salary Slip',
+        filters={'employee': employee, 'docstatus': 0}, pluck='name')
+    if drafts:
+        frappe.throw('%s still has DRAFT salary slip(s): %s. Submit their final '
+                     'pay first (or delete the draft) - never deactivate before '
+                     'the final slip is settled.'
+                     % (emp.employee_name, ', '.join(drafts)))
+    made = []
+    last = frappe.get_all('Salary Slip',
+        filters={'employee': employee, 'docstatus': 1},
+        fields=['end_date'], order_by='start_date desc', limit=1)
+    cutoff = str(last[0].end_date) if last else '1900-01-01'
+    for row in frappe.get_all('Additional Salary',
+            filters={'employee': employee, 'docstatus': ['<', 2],
+                     'payroll_date': ['>', cutoff]},
+            fields=['name', 'docstatus', 'salary_component', 'amount']):
+        if row.docstatus == 1:
+            frappe.get_doc('Additional Salary', row.name).cancel()
+            made.append('cancelled %s (%s %s)'
+                        % (row.name, row.salary_component, row.amount))
+        else:
+            frappe.delete_doc('Additional Salary', row.name, force=1)
+            made.append('deleted draft %s (%s %s)'
+                        % (row.name, row.salary_component, row.amount))
+    for l in frappe.get_all('Staff Loan Advance',
+            filters={'employee': employee, 'status': 'Active'}, pluck='name'):
+        doc = frappe.get_doc('Staff Loan Advance', l)
+        repaid = sum(_flt(r.amount) for r in doc.repayments)
+        bal = round(_flt(doc.principal) - repaid, 2)
+        doc.status = loan_action
+        doc.notes = ((doc.notes or '') + '\n' if doc.notes else '') + \
+            '%s on offboarding %s. Balance at closure: GHS %s.' \
+            % (loan_action, today(), bal)
+        doc.save()
+        made.append('loan %s -> %s (balance %s)' % (l, loan_action, bal))
+    emp.status = 'Inactive'
+    emp.relieving_date = relieving_date
+    emp.save()
+    made.append('employee -> Inactive, relieving %s' % relieving_date)
+    return {'employee_name': emp.employee_name, 'made': made}
+
+
+@frappe.whitelist()
+def settle_loan(loan, action, month=None):
+    """Close one loan from the prep sheet: Written Off (company's loss) or
+    Fully Paid. Removes this month's planned deduction so payroll stops
+    collecting, recomputes totals, stamps a dated note."""
+    _require_access()
+    if action not in ('Written Off', 'Fully Paid'):
+        frappe.throw('Action must be Written Off or Fully Paid.')
+    doc = frappe.get_doc('Staff Loan Advance', loan)
+    made = []
+    if month:
+        ref = f"PAYROLL-{month}"
+        m_start, m_end = _month_bounds(month)
+        for r in list(doc.repayments):
+            if r.reference == ref:
+                doc.repayments.remove(r)
+                made.append('removed this month\'s planned repayment %s'
+                            % flt(r.amount, 2))
+        for name in frappe.get_all('Additional Salary',
+                filters={'employee': doc.employee, 'salary_component': 'Loans',
+                         'docstatus': 0,
+                         'payroll_date': ['between', [m_start, m_end]],
+                         'custom_bgl_note': ['like', f'%{doc.name}%']},
+                pluck='name'):
+            frappe.delete_doc('Additional Salary', name, force=1)
+            made.append('deleted draft deduction ' + name)
+    doc.total_repaid = sum(flt(r.amount) for r in doc.repayments)
+    doc.balance = flt(doc.principal) - flt(doc.total_repaid)
+    bal = flt(doc.balance, 2)
+    doc.status = action
+    doc.notes = ((doc.notes or '') + '\n' if doc.notes else '') + \
+        '%s on %s via prep sheet. Balance at closure: GHS %s.' \
+        % (action, today(), bal)
+    doc.save()
+    made.append('status -> %s (balance %s)' % (action, bal))
+    return {'employee_name': doc.employee_name, 'balance': bal, 'made': made}
