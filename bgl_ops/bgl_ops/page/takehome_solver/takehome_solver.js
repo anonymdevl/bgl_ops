@@ -26,11 +26,8 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 					picked.push({ employee: $(this).data('emp'), target: t || null });
 				});
 				if (!picked.length) { frappe.msgprint('Nothing ticked.'); return; }
-				frappe.call({ method: 'bgl_ops.api.paye_sweep_apply_all',
-					args: { month: month, employees: JSON.stringify(picked), dry_run: 1 },
-					freeze: true, freeze_message: 'Working out what will land on each slip...',
-					callback: function(pr) {
-						var pm = pr.message || {};
+				apply_chunks(picked, 1, function(pm) {
+						if (pm.aborted) return;
 						var prev = pm.done || [];
 						var n_basic = prev.filter(function(x) { return x.plan === 'basic'; }).length;
 						var rows = prev.map(function(x) {
@@ -61,24 +58,52 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 							(n_basic ? '<p><b>' + n_basic + '</b> row(s) change BASIC salary, which also moves SSNIT - theirs and the employer 13% share.</p>' : '') +
 							'<p>Write these <b>' + ok.length + '</b> package(s) and rebuild their draft slips?</p>',
 							function() {
-								frappe.call({ method: 'bgl_ops.api.paye_sweep_apply_all',
-									args: { month: month, employees: JSON.stringify(ok) },
-									freeze: true, freeze_message: 'Applying ' + ok.length + ' package(s)...',
-									callback: function(r) {
-										var m = r.message || {};
-										var h = (m.done || []).length + ' adjusted.';
-										if ((m.failed || []).length)
-											h += '<br><br><b>Could not adjust:</b><br>' + m.failed.map(function(f) {
-												return f.employee + ': ' + frappe.utils.escape_html(String(f.error).slice(0, 160));
-											}).join('<br>');
-										frappe.msgprint({ title: 'Sweep finished', indicator: (m.failed || []).length ? 'orange' : 'green', message: h });
-										load_rows();
-									} });
+								apply_chunks(ok, 0, function(m) {
+									var h = (m.done || []).length + ' adjusted.' +
+										(m.aborted ? ' <b>Interrupted</b> - press Apply to selected again to finish the rest; the adjusted ones are saved.' : '');
+									if ((m.failed || []).length)
+										h += '<br><br><b>Could not adjust:</b><br>' + m.failed.map(function(f) {
+											return f.employee + ': ' + frappe.utils.escape_html(String(f.error).slice(0, 160));
+										}).join('<br>');
+									frappe.msgprint({ title: m.aborted ? 'Sweep interrupted (progress saved)' : 'Sweep finished', indicator: (m.failed || []).length || m.aborted ? 'orange' : 'green', message: h });
+									load_rows();
+								});
 							});
-					} });
+					});
 			}
 		});
 		function fmtn(v) { return format_number(v, null, 2); }
+		function apply_chunks(items, dry, then) {
+			// small batches: one giant request is how an hour of typing
+			// once died to a gateway timeout. Every finished chunk is
+			// committed; a dropped connection pauses, never loses.
+			var done = [], failed = [], i = 0, CH = 8;
+			var verb = dry ? 'Previewing' : 'Applying';
+			function step() {
+				if (i >= items.length) { frappe.hide_progress(); then({ done: done, failed: failed }); return; }
+				var chunk = items.slice(i, i + CH);
+				frappe.call({ method: 'bgl_ops.api.paye_sweep_apply_all',
+					args: { month: month, employees: JSON.stringify(chunk), dry_run: dry ? 1 : 0 },
+					callback: function(r) {
+						var m = r.message || {};
+						done = done.concat(m.done || []);
+						failed = failed.concat(m.failed || []);
+						i += chunk.length;
+						frappe.show_progress(verb + '...', Math.min(i, items.length), items.length,
+							Math.min(i, items.length) + ' of ' + items.length);
+						step();
+					},
+					error: function() {
+						frappe.hide_progress();
+						frappe.msgprint({ indicator: 'orange', title: 'Connection hiccup',
+							message: (dry ? 'Preview paused. ' : 'Everyone already applied is SAVED. ') +
+								'Press the button again to continue from where it stopped - finished rows simply report "already swept".' });
+						then({ done: done, failed: failed, aborted: 1 });
+					} });
+			}
+			frappe.show_progress(verb + '...', 0, items.length, 'starting...');
+			step();
+		}
 		function print_sweep() {
 			var rows = '';
 			d.$wrapper.find('tbody tr').each(function() {

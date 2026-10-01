@@ -1,5 +1,11 @@
 ## v1.33.8 - 2026-10-01
 
+- PAYE sweep applies (and previews) now run in small chunks with a
+  progress bar. The single giant request is how a 120-second worker
+  timeout threw away the tail of an hour's typed corrections at person
+  31 - now every chunk commits as it lands, and a dropped connection
+  pauses with "press Apply again to continue" instead of losing work.
+
 - Already-swept rows on the PAYE sweep now show a dash instead of a
   phantom shortage/overage (people read "short 6.00" on a finished row
   as "nothing happened"). Grey + "already swept" + dash = done.
