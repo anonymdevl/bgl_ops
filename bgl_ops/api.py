@@ -3142,10 +3142,11 @@ def paye_sweep(month):
         else:
             plan, sug_basic, sug_allow = _sweep_plan(
                 basic, h, t, e, old_net, m_end)
-        if skip.startswith('part-month'):
-            # a prorated slip cannot be reverse-derived: the old-band
-            # figure is meaningless here and showing it reads as a
-            # shortage/overage that does not exist
+        if skip.startswith('part-month') or skip.startswith('already swept'):
+            # these figures would be reverse-derived from a package that
+            # is prorated or ALREADY re-solved for the new table - either
+            # way phantoms that read like real discrepancies. People saw
+            # "short 6.00" on finished rows and thought nothing happened.
             old_net = delta = None
         rows.append({'employee': s.employee,
                      'employee_name': s.employee_name,

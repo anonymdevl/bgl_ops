@@ -1,5 +1,8 @@
 ## v1.33.8 - 2026-10-01
 
+- Already-swept rows on the PAYE sweep now show a dash instead of a
+  phantom shortage/overage (people read "short 6.00" on a finished row
+  as "nothing happened"). Grey + "already swept" + dash = done.
 - Refresh draft slips now runs as a BACKGROUND job with a live progress
   bar (X of 144 rebuilt). Rebuilding every slip inside one web request is
   how the click used to time out at the gateway - the work finished
