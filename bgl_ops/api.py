@@ -2250,7 +2250,9 @@ def payroll_status(month):
     names = [e.name for e in entries]
     expected = sum(cint(e.number_of_employees) for e in entries)
     slips = _q(
-        """select name, employee, employee_name, docstatus, net_pay, gross_pay
+        """select name, employee, employee_name, docstatus, net_pay,
+                  gross_pay, ifnull(annual_taxable_amount,0) taxable,
+                  ifnull(current_month_income_tax,0) paye_charged
            from `tabSalary Slip`
            where payroll_entry in %(pe)s and docstatus < 2""",
         {"pe": names})
@@ -2294,6 +2296,18 @@ def payroll_status(month):
         if flt(x.net_pay) <= 0:
             anomalies.append(f"{x.employee_name}: net pay is "
                              f"{flt(x.net_pay, 2)}")
+    # v1.33.5: every slip's PAYE must match the LIVE tax slab. A slip that
+    # does not is almost always an employee whose salary assignment still
+    # points at the old slab - exactly the thing nobody can eyeball across
+    # 144 slips.
+    for x in slips:
+        if flt(x.taxable) > 0:
+            want = _paye_monthly(x.taxable, m_end)
+            if abs(want - flt(x.paye_charged)) > 1:
+                anomalies.append(
+                    f"{x.employee_name}: slip PAYE {flt(x.paye_charged, 2)} "
+                    f"but the live tax table says {want} - is the OLD "
+                    "slab still on their salary assignment?")
     prev = _q(
         """select ss.employee, ss.net_pay from `tabSalary Slip` ss
            where ss.docstatus=1 and ss.end_date < %(f)s
@@ -2873,25 +2887,39 @@ def set_salary(employee, month, basic, take_home, dry_run=0):
         ads.insert()
         ads.submit()
         out['made'].append('%s %s' % (comp, amt))
-    # 3) Correct the mid-month proration draft (Basic Salary overwrite)
+    # 3) Correct the mid-month proration (Basic Salary overwrite). After
+    # the month is APPROVED this row is SUBMITTED, and ERPNext refuses a
+    # duplicate overwrite - so clear whatever stands first, then replace
+    # it at the same docstatus it had (a submitted one must come back
+    # submitted, or the rebuilt slip would lose the proration entirely).
     if pro_amount is not None:
-        row = frappe.get_all('Additional Salary',
-            filters={'employee': employee, 'salary_component': 'Basic Salary',
-                     'docstatus': 0,
-                     'payroll_date': ['between', [m_start, m_end]]},
-            pluck='name')
-        if row:
-            frappe.db.set_value('Additional Salary', row[0], 'amount', pro_amount)
-            out['made'].append('proration %s -> %s' % (row[0], pro_amount))
+        had_submitted = False
+        for row in frappe.get_all('Additional Salary',
+                filters={'employee': employee,
+                         'salary_component': 'Basic Salary',
+                         'docstatus': ['<', 2],
+                         'payroll_date': ['between', [m_start, m_end]]},
+                fields=['name', 'docstatus']):
+            if row.docstatus == 1:
+                frappe.get_doc('Additional Salary', row.name).cancel()
+                had_submitted = True
+                out['made'].append('cancelled proration %s' % row.name)
+            else:
+                frappe.delete_doc('Additional Salary', row.name, force=1)
+                out['made'].append('removed proration draft %s' % row.name)
+        ads = frappe.new_doc('Additional Salary')
+        ads.update({'employee': employee, 'salary_component': 'Basic Salary',
+                    'amount': pro_amount, 'payroll_date': m_end,
+                    'company': emp.company,
+                    'overwrite_salary_structure_amount': 1,
+                    'custom_bgl_note':
+                        'Proration %s/22 days (Salary Wizard)' % days})
+        ads.insert()
+        if had_submitted:
+            ads.submit()
+            out['made'].append('proration %s approved (replaces the '
+                               'cancelled one)' % pro_amount)
         else:
-            ads = frappe.new_doc('Additional Salary')
-            ads.update({'employee': employee, 'salary_component': 'Basic Salary',
-                        'amount': pro_amount, 'payroll_date': m_end,
-                        'company': emp.company,
-                        'overwrite_salary_structure_amount': 1,
-                        'custom_bgl_note':
-                            'Proration %s/22 days (Salary Wizard)' % days})
-            ads.insert()
             out['made'].append('proration draft created %s' % pro_amount)
     # 4) Rebuild draft slip if the month already has one
     new_net = _rebuild_draft_slip(employee, m_start, m_end, emp.company)

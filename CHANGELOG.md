@@ -1,3 +1,19 @@
+## v1.33.6 - 2026-10-01
+
+- Fix button / Salary Wizard: correcting a joiner AFTER the month was
+  approved failed with "Duplicate Overwritten Salary ... already exists"
+  - the proration overwrite was already submitted and the wizard only
+  knew how to edit drafts. It now cancels the standing overwrite and
+  writes the corrected one back at the same approval status, so the
+  rebuilt slip keeps its proration.
+
+## v1.33.5 - 2026-10-01
+
+- The Review board now audits every draft slip's PAYE against the LIVE
+  tax slab before submission: any slip whose charged PAYE disagrees with
+  the live table (an assignment still pointing at the old slab, say) is
+  named in the anomalies list, and submission refuses to pass it silently.
+
 ## v1.33.4 - 2026-10-01
 
 - Every sweep row can now show the full slip landing INLINE, before
