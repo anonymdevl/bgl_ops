@@ -1,3 +1,11 @@
+## v1.33.10 - 2026-10-01
+
+- Refresh draft slips no longer depends on background queue workers
+  (which were not picking up jobs - the bar sat at 0/144 forever). The
+  page now rebuilds in small committed chunks exactly like the sweep:
+  live progress, a dropped connection pauses with "press again to
+  continue", and re-running is always safe.
+
 ## v1.33.9 - 2026-10-01
 
 - Solver/sweep no longer collides with FUTURE-dated salary assignments

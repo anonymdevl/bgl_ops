@@ -3334,6 +3334,40 @@ def refresh_draft_slips(month, site=None):
 
 
 @frappe.whitelist()
+def refresh_list(month):
+    """The draft slips a refresh will rebuild - the page chunks these
+    itself, so nothing depends on background queue workers being alive."""
+    _require_access()
+    m_start, _ = _month_bounds(month)
+    return frappe.get_all('Salary Slip',
+        filters={'start_date': m_start, 'docstatus': 0},
+        fields=['employee', 'company'], limit_page_length=0)
+
+
+@frappe.whitelist()
+def refresh_some(month, employees):
+    """Rebuild a SMALL batch of draft slips, one commit each."""
+    _require_access()
+    if isinstance(employees, str):
+        employees = json.loads(employees)
+    if len(employees) > 12:
+        frappe.throw('Batch too large - the page sends small chunks.')
+    m_start, m_end = _month_bounds(month)
+    done, failed = 0, []
+    for item in employees:
+        emp = item.get('employee') if isinstance(item, dict) else item
+        try:
+            company = frappe.db.get_value('Employee', emp, 'company')
+            _rebuild_draft_slip(emp, m_start, m_end, company)
+            frappe.db.commit()
+            done += 1
+        except Exception as ex:
+            frappe.db.rollback()
+            failed.append('%s: %s' % (emp, str(ex)[:120]))
+    return {'done': done, 'failed': failed}
+
+
+@frappe.whitelist()
 def refresh_progress(month):
     _require_access()
     v = frappe.cache().get_value(_refresh_key(month))

@@ -809,29 +809,40 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 				frappe.confirm(
 					'Rebuild every DRAFT slip for ' + state.month + '? Use this after approving something that arrived late - regenerated trip earnings, sweep corrections - so the drafts pick it up. Submitted slips are never touched. Runs in the background with a progress bar.',
 					function() {
-						frappe.call({ method: 'bgl_ops.api.refresh_draft_slips',
+						frappe.call({ method: 'bgl_ops.api.refresh_list',
 							args: { month: state.month },
 							callback: function(r) {
-								var total = (r.message || {}).queued || 0;
-								function poll() {
-									frappe.call({ method: 'bgl_ops.api.refresh_progress',
-										args: { month: state.month },
-										callback: function(p) {
-											var st = p.message || {};
-											if (!st.finished) {
-												frappe.show_progress('Rebuilding draft slips...', st.done || 0, st.total || total,
-													(st.done || 0) + ' of ' + (st.total || total) + ' rebuilt');
-												setTimeout(poll, 2000);
-												return;
-											}
+								var list = r.message || [];
+								if (!list.length) { frappe.msgprint('No draft slips to rebuild.'); return; }
+								var done = 0, failed = [], i = 0, CH = 6;
+								function step() {
+									if (i >= list.length) {
+										frappe.hide_progress();
+										frappe.show_alert({ message: done + ' of ' + list.length + ' slip(s) rebuilt.', indicator: failed.length ? 'orange' : 'green' }, 6);
+										if (failed.length) frappe.msgprint({ title: 'Could not rebuild', indicator: 'orange', message: failed.join('<br>') });
+										render_payzone();
+										return;
+									}
+									var chunk = list.slice(i, i + CH).map(function(x) { return x.employee; });
+									frappe.call({ method: 'bgl_ops.api.refresh_some',
+										args: { month: state.month, employees: JSON.stringify(chunk) },
+										callback: function(cr) {
+											var m = cr.message || {};
+											done += m.done || 0;
+											failed = failed.concat(m.failed || []);
+											i += chunk.length;
+											frappe.show_progress('Rebuilding draft slips...', Math.min(i, list.length), list.length,
+												Math.min(i, list.length) + ' of ' + list.length);
+											step();
+										},
+										error: function() {
 											frappe.hide_progress();
-											frappe.show_alert({ message: st.done + ' slip(s) rebuilt.', indicator: 'green' }, 6);
-											if ((st.failed || []).length) frappe.msgprint({ title: 'Could not rebuild', indicator: 'orange', message: st.failed.join('<br>') });
-											render_payzone();
+											frappe.msgprint({ indicator: 'orange', title: 'Connection hiccup',
+												message: done + ' already rebuilt and saved. Press the button again to continue - rebuilt slips are simply rebuilt again, nothing is lost.' });
 										} });
 								}
-								frappe.show_progress('Rebuilding draft slips...', 0, total || 1, 'starting...');
-								setTimeout(poll, 1500);
+								frappe.show_progress('Rebuilding draft slips...', 0, list.length, 'starting...');
+								step();
 							} });
 					});
 			});
