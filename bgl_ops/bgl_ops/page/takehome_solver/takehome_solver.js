@@ -285,6 +285,13 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 		<div><label>Split % (H,T,E)</label><input id="th-split" value="40,30,30"></div>\
 	</div>').appendTo(body);
 	fill_months(g.find('#th-month'));
+	// open on the month actually in play (same rule as the other pages):
+	// the previous month for as long as its payroll is unsubmitted
+	frappe.call({ method: 'bgl_ops.api.suggest_month' }).then(function(r) {
+		var m = (r.message || {}).month;
+		if (m && g.find('#th-month option[value="' + m + '"]').length)
+			g.find('#th-month').val(m);
+	});
 	function set_off($cell, off) {
 		var $inp = $cell.find('input,select');
 		$inp.prop('disabled', off);

@@ -1,3 +1,9 @@
+## v1.33.1 - 2026-10-01
+
+- Take-Home Solver's month selector now also opens on the month in play
+  (it was the one page still defaulting to the calendar month, which sent
+  the PAYE Correction Sweep looking at an empty October).
+
 ## v1.33.0 - 2026-10-01
 
 PAYE revision toolkit (the September GRA slab change) + payroll-run polish:
