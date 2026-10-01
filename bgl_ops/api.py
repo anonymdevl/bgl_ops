@@ -10,7 +10,7 @@ PAY_GROUPS = [
 ]
 GROUP_UNIT = {
     "Mixer Driver": "Trip", "Pump Driver": "Trip", "Trailer Driver": "Trip",
-    "Pump Operator": "Cubic", "Plant Operator": "Cubic", "Chemical": "Fixed",
+    "Pump Operator": "Cubic", "Plant Operator": "Cubic", "Chemical": "Trip",
 }
 
 
@@ -28,24 +28,37 @@ def _q(sql, values=None):
 
 def _active_rates():
     return _q(
-        """select pay_group, site, day_type, rate, effective_from, salary_component
+        """select pay_group, site, day_type, rate, effective_from,
+                  salary_component, employee
            from `tabBGL Trip Rate` where is_active=1
            order by effective_from desc""")
 
 
-def _rate_for(rates, pay_group, site, day_type, on_date):
-    """Site-specific rate wins over 'All'; latest effective_from <= date."""
+def _rate_for(rates, pay_group, site, day_type, on_date, employee=None):
+    """A rate tied to THIS employee always wins (name-tied rates, e.g. the
+    chemical pair). Otherwise: site-specific beats 'All'; latest
+    effective_from <= date. Rows tied to a DIFFERENT employee never apply."""
     best = None
+    tied_best = None
     for r in rates:
         if r.pay_group != pay_group or r.day_type != day_type:
             continue
         if str(r.effective_from) > str(on_date):
             continue
+        tied = getattr(r, "employee", None)
+        if tied:
+            if employee and tied == employee:
+                if r.site == site:
+                    return r
+                if tied_best is None:
+                    tied_best = r
+            continue  # someone else's personal rate - never generalize it
         if r.site == site:
-            return r
-        if r.site == "All" and best is None:
+            if best is None or best.site != site:
+                best = r
+        elif r.site == "All" and best is None:
             best = r
-    return best
+    return tied_best or best
 
 
 @frappe.whitelist()
@@ -352,7 +365,8 @@ def bulk_save(site, month, entries, trucks=None):
                 skipped += 1
                 continue
             day_type = "Saturday" if log_date.weekday() == 5 else "Weekday"
-            rate = _rate_for(rates, pay_group, site, day_type, log_date)
+            rate = _rate_for(rates, pay_group, site, day_type, log_date,
+                             employee=employee)
             rate_val = flt(rate.rate) if rate else 0
             component = rate.salary_component if rate else None
 
@@ -2458,13 +2472,17 @@ def solver_apply(employee, month, basic, housing, transport, eda, note=None):
     ssa.submit()
     made.append('SSA %s base %s' % (ssa.name, _flt(basic)))
     for comp, amt in zip(_ALLOW_COMPONENTS, [housing, transport, eda]):
-        for old in frappe.get_all('Additional Salary',
+        for row in frappe.get_all('Additional Salary',
                 filters={'employee': employee, 'salary_component': comp,
-                         'docstatus': 1,
+                         'docstatus': ['<', 2],
                          'payroll_date': ['between', [m_start, m_end]]},
-                pluck='name'):
-            frappe.get_doc('Additional Salary', old).cancel()
-            made.append('cancelled ' + old)
+                fields=['name', 'docstatus']):
+            if row.docstatus == 1:
+                frappe.get_doc('Additional Salary', row.name).cancel()
+                made.append('cancelled ' + row.name)
+            else:
+                frappe.delete_doc('Additional Salary', row.name, force=1)
+                made.append('deleted draft ' + row.name)
         ads = frappe.new_doc('Additional Salary')
         ads.update({'employee': employee, 'salary_component': comp,
                     'amount': _flt(amt), 'payroll_date': m_end,

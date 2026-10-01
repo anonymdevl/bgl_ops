@@ -76,6 +76,13 @@
     "bold": 1
    },
    {
+    "fieldname": "employee",
+    "fieldtype": "Link",
+    "label": "Tied to Employee (optional)",
+    "options": "Employee",
+    "description": "Leave empty for a normal group rate. Set a person to make this a NAME-TIED rate that overrides the group rate for them only (e.g. the chemical pair: Joseph 15, Timothy 7)."
+   },
+   {
     "fieldname": "site",
     "label": "Site",
     "fieldtype": "Select",

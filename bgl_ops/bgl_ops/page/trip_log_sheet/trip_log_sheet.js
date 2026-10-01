@@ -90,18 +90,23 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 		$in.trigger('blur');
 	});
 
-	function rate_for(desig, day) {
+	function rate_for(desig, day, emp) {
 		var d = state.sheet;
 		if (!d) return 0;
 		var day_type = d.saturdays.indexOf(day) >= 0 ? 'Saturday' : 'Weekday';
 		var date_str = d.month + '-' + String(day).padStart(2, '0');
-		var best = null;
+		var best = null, tied = null;
 		(d.rates || []).forEach(function(r) {
 			if (r.pay_group !== desig || r.day_type !== day_type) return;
 			if (String(r.effective_from) > date_str) return;
+			if (r.employee) {
+				if (emp && r.employee === emp && (!tied || r.site === d.site)) tied = r;
+				return; // someone else's personal rate - never applies here
+			}
 			if (r.site === d.site) { if (!best || best.site !== d.site) best = r; }
 			else if (r.site === 'All' && (!best || best.site === 'All')) best = best || r;
 		});
+		if (tied) return tied.rate;
 		return best ? best.rate : 0;
 	}
 
@@ -147,7 +152,7 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 			var v = parseFloat($(this).val()) || 0;
 			if (!v) return;
 			var day = parseInt($(this).data('day'), 10);
-			var money = v * rate_for(desig, day);
+			var money = v * rate_for(desig, day, emp);
 			q += v;
 			if (is_sat(day)) { sq += v; sa += money; } else { na += money; }
 		});
@@ -326,7 +331,7 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 				var v = parseFloat(holder.find('input.q[data-emp="' + e.name + '"][data-day="' + day + '"]').val()) || 0;
 				vals.push(v); tot += v;
 				if (v) {
-					var mm = v * rate_for(e.designation, day);
+					var mm = v * rate_for(e.designation, day, e.name);
 					amt += mm;
 					if (sat[day]) { rs += mm; rsq += v; } else { rn += mm; }
 				}

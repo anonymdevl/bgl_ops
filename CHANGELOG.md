@@ -1,3 +1,32 @@
+## v1.32.0 - 2026-10-01
+
+Name-tied rates (Phase 3 for the chemical pair) + Chemical joins the trip
+world properly:
+
+- BGL Trip Rate gains an optional "Tied to Employee" field. A rate tied to
+  a person overrides the group rate FOR THAT PERSON ONLY and never leaks to
+  anyone else; empty = normal group rate, all other groups unaffected.
+  Rate lookup updated everywhere it happens: server bulk save, the Trip
+  Sheet's on-screen money, and the Daily Trip Log form script.
+- Chemical pay group unit changed Fixed -> Trip: their logs now count in
+  the trip dashboards, their earnings flow through Generate Trip Earnings
+  into the trips/cubic salary component on the rate row (component naming
+  to be handled at print-format level), and the prep sheet's fixed-OT
+  block now covers Chemical too - ending the hand-priced Overtime
+  Allowance workaround that reconciliation could not see.
+- Logic verified: Timothy resolves to his personal 7, Joseph to the group
+  15, personal rows never apply to others, site-beats-All preserved.
+
+## v1.31.2 - 2026-09-30
+
+- Fix: the standalone solver's "Apply this to payroll" (solver_apply)
+  replaced SUBMITTED allowance ADS but silently left DRAFT ones from the
+  prep sheet behind, producing employee/component duplicates on the Review
+  Board (one stale draft + one fresh submitted per component). It now
+  deletes month drafts and cancels submitted alike before writing - same
+  behaviour as the wizard's set_salary. Re-applying a package for an
+  affected employee also cleans up their existing duplicates.
+
 ## v1.31.1 - 2026-09-30
 
 - Fix: the Close button on the Loans tab was being wiped the instant the
