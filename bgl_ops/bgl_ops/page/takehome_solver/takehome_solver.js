@@ -94,7 +94,7 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 					'<td class="r"><b>' + (typeof agreed === 'number' ? format_number(agreed, null, 2) : agreed) + '</b></td>' +
 					'<td class="r">' + $(tds[5]).text() + '</td>' +
 					'<td class="r">' + $(tds[6]).text() + '</td>' +
-					'<td>' + $(tds[7]).text() + '</td>' +
+					'<td>' + $(tds[7]).text().replace('show slip', '').trim() + '</td>' +
 					'<td>' + $(tds[8]).text() + '</td>' +
 					'<td class="c">' + ticked + '</td></tr>';
 			});
@@ -156,6 +156,8 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 							fix = 'allowances ' + fmtn(x.allowances) + ' &rarr; <b>' + fmtn(x.suggested_allowances) + '</b>';
 						else if (!x.skip && x.plan === 'basic')
 							fix = '<span style="color:var(--orange-500)">basic ' + fmtn(x.basic) + ' &rarr; <b>' + fmtn(x.suggested_basic) + '</b></span>';
+						if (!x.skip)
+							fix += ' &nbsp;<a class="pcs-prev" style="cursor:pointer;font-size:11px">show slip</a>';
 						h += '<tr' + (x.skip ? ' style="opacity:.5"' : '') + '>' +
 							'<td>' + (x.skip ? '' : '<input type="checkbox" class="pcs-pick" data-emp="' + x.employee + '" data-plan="' + (x.plan || '') + '" checked>') + '</td>' +
 							'<td>' + frappe.utils.escape_html(x.employee_name) + '</td>' +
@@ -176,24 +178,46 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 					d.$wrapper.find('#pcs-all').on('change', function() {
 						d.$wrapper.find('.pcs-pick').prop('checked', this.checked);
 					});
-					d.$wrapper.find('.pcs-target').on('change', function() {
-						var $r = $(this).closest('tr');
+					function show_landing($r) {
 						var empid = $r.find('.pcs-pick').data('emp');
-						var t = flt($(this).val());
-						if (!empid || !t) return;
-						var $fix = $r.find('td').eq(7);
-						$fix.html('<span style="color:var(--text-muted)">recalculating...</span>');
+						if (!empid) return;
+						var t = flt($r.find('.pcs-target').val());
+						$r.next('.pcs-detail').remove();
+						var $band = $('<tr class="pcs-detail"><td colspan="9" style="background:var(--fg-color);font-size:12px;padding:6px 10px;color:var(--text-muted)">working out the slip...</td></tr>');
+						$r.after($band);
 						frappe.call({ method: 'bgl_ops.api.paye_sweep_apply',
-							args: { month: month, employee: empid, target: t, dry_run: 1 },
+							args: { month: month, employee: empid, target: t || null, dry_run: 1 },
 							callback: function(r) {
 								var x = r.message || {};
-								$fix.html(x.plan === 'basic'
+								$band.find('td').html(
+									'<b style="color:var(--text-color)">Their slip will read:</b> ' +
+									'Basic <b>' + fmtn(x.basic) + '</b>' +
+									(x.plan === 'basic' ? ' <b style="color:var(--orange-500)">(changed)</b>' : '') +
+									' + Housing <b>' + fmtn(x.housing) + '</b>' +
+									' + Transport <b>' + fmtn(x.transport) + '</b>' +
+									' + Extra Duty <b>' + fmtn(x.eda) + '</b>' +
+									' = Gross <b>' + fmtn(x.gross) + '</b>' +
+									' &nbsp;&minus; SSNIT <b>' + fmtn(x.ssnit) + '</b>' +
+									' &minus; PAYE <b>' + fmtn(x.paye) + '</b>' +
+									' &nbsp;= <b style="color:var(--green-600);font-size:13px">Net ' + fmtn(x.net) + '</b>' +
+									' <span style="font-size:11px">(trips/OT add on top; advances, loans and absences come off)</span>');
+								var $fix = $r.find('td').eq(7);
+								$fix.html((x.plan === 'basic'
 									? '<span style="color:var(--orange-500)">basic &rarr; <b>' + fmtn(x.basic) + '</b></span>'
-									: 'allowances &rarr; <b>' + fmtn(flt(x.housing) + flt(x.transport) + flt(x.eda)) + '</b>');
+									: 'allowances &rarr; <b>' + fmtn(flt(x.housing) + flt(x.transport) + flt(x.eda)) + '</b>') +
+									' &nbsp;<a class="pcs-prev" style="cursor:pointer;font-size:11px">show slip</a>');
 								$r.find('.pcs-pick').data('plan', x.plan);
 							},
-							error: function() { $fix.html('<span style="color:var(--red-500)">cannot reach that figure</span>'); }
+							error: function() {
+								$band.find('td').html('<span style="color:var(--red-500)">That figure cannot be reached with this package - check the number.</span>');
+							}
 						});
+					}
+					d.$wrapper.find('.pcs-target').on('change', function() {
+						show_landing($(this).closest('tr'));
+					});
+					d.$wrapper.off('click', '.pcs-prev').on('click', '.pcs-prev', function() {
+						show_landing($(this).closest('tr'));
 					});
 				} });
 		}

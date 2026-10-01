@@ -1,3 +1,12 @@
+## v1.33.4 - 2026-10-01
+
+- Every sweep row can now show the full slip landing INLINE, before
+  anything is ticked or applied: a "show slip" link (and any edit of the
+  Agreed figure) expands a band under the row reading exactly like the
+  slip will - Basic (+changed flag), Housing, Transport, Extra Duty,
+  Gross, minus SSNIT, minus PAYE, Net - solved live on the server for the
+  figure standing in the box.
+
 ## v1.33.3 - 2026-10-01
 
 Nobody applies the sweep blind:
