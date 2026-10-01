@@ -150,6 +150,7 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 						'<th style="text-align:right">Agreed figure</th><th style="text-align:right">Draft slip now</th>' +
 						'<th style="text-align:right">Difference</th><th>Suggested fix</th><th>Note</th></tr></thead><tbody>';
 					m.rows.forEach(function(x) {
+						var nd = (x.delta == null);
 						var col = x.delta > 0 ? 'var(--red-500)' : 'var(--green-600)';
 						var fix = '';
 						if (!x.skip && x.plan === 'allowances')
@@ -164,11 +165,11 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 							'<td style="text-align:right">' + fmtn(x.basic) + '</td>' +
 							'<td style="text-align:right">' + fmtn(x.allowances) + '</td>' +
 							'<td style="text-align:right">' + (x.skip
-								? '<span style="font-weight:700">' + fmtn(x.old_net) + '</span>'
+								? '<span style="font-weight:700">' + (x.old_net == null ? '&mdash;' : fmtn(x.old_net)) + '</span>'
 								: '<input type="number" step="0.01" class="pcs-target" data-derived="' + x.old_net + '" value="' + x.old_net + '" style="width:92px;text-align:right;font-weight:700;border:1px solid var(--border-color);border-radius:6px;padding:2px 6px">') + '</td>' +
 							'<td style="text-align:right">' + fmtn(x.new_net) + '</td>' +
-							'<td style="text-align:right;color:' + col + ';font-weight:700">' +
-								(x.delta > 0 ? 'short ' : 'over ') + fmtn(Math.abs(x.delta)) + '</td>' +
+							'<td style="text-align:right;color:' + (nd ? 'var(--text-muted)' : col) + ';font-weight:700">' +
+								(nd ? '&mdash;' : (x.delta > 0 ? 'short ' : 'over ') + fmtn(Math.abs(x.delta))) + '</td>' +
 							'<td style="font-size:11.5px">' + fix + '</td>' +
 							'<td style="font-size:11.5px;color:var(--text-muted)">' + frappe.utils.escape_html(x.skip || '') + '</td></tr>';
 					});

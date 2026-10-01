@@ -1,3 +1,14 @@
+## v1.33.7 - 2026-10-01
+
+- Part-month (prorated) rows on the PAYE sweep no longer display a
+  derived "agreed figure" or shortage/overage - a prorated slip cannot be
+  reverse-derived, so those numbers were phantoms that read like real
+  discrepancies. They now show a dash; the Fix button remains their path.
+- Rebuilt draft slips occasionally came out named "Sal Slip/None/00056"
+  (the slip's autoname fired before the employee reached the document).
+  Rebuilds now rename such slips to the proper employee series, so the
+  next rebuild of any misnamed draft also heals its name.
+
 ## v1.33.6 - 2026-10-01
 
 - Fix button / Salary Wizard: correcting a joiner AFTER the month was

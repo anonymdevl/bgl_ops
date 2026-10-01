@@ -2612,6 +2612,14 @@ def _rebuild_draft_slip(employee, m_start, m_end, company):
     s.update({'employee': employee, 'start_date': m_start, 'end_date': m_end,
               'posting_date': m_end, 'payroll_entry': pe, 'company': company})
     s.insert()
+    # the slip's autoname can fire before the employee lands on the doc,
+    # leaving 'Sal Slip/None/00056'-style names in history - rename to the
+    # proper series whenever that happens
+    if '/None/' in (s.name or ''):
+        from frappe.model.naming import make_autoname
+        good = make_autoname('Sal Slip/%s/.#####' % employee)
+        frappe.rename_doc('Salary Slip', s.name, good, force=1)
+        s.name = good
     return _flt(s.net_pay)
 
 @frappe.whitelist()
@@ -3134,6 +3142,11 @@ def paye_sweep(month):
         else:
             plan, sug_basic, sug_allow = _sweep_plan(
                 basic, h, t, e, old_net, m_end)
+        if skip.startswith('part-month'):
+            # a prorated slip cannot be reverse-derived: the old-band
+            # figure is meaningless here and showing it reads as a
+            # shortage/overage that does not exist
+            old_net = delta = None
         rows.append({'employee': s.employee,
                      'employee_name': s.employee_name,
                      'basic': round(basic, 2), 'allowances': allow,
