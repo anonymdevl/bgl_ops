@@ -17,6 +17,20 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 		fieldname: 'month', label: 'Month', fieldtype: 'Select',
 		options: MONTHS.join('\n'), default: MONTHS[new Date().getMonth()]
 	});
+	// v1.33.0: in the first days of a month everyone is still finishing the
+	// PREVIOUS month's payroll, so opening on the calendar month showed a
+	// blank sheet and people thought their work was lost. Ask the server
+	// which month is actually in play and switch to it before first load.
+	frappe.call({ method: 'bgl_ops.api.suggest_month' }).then(function(r) {
+		var m = (r.message || {}).month;
+		if (!m) return;
+		var want = MONTHS[parseInt(m.slice(5, 7), 10) - 1];
+		if (month_field.get_value() !== want) {
+			month_field.set_value(want);
+			setTimeout(load_sheet, 50);
+		}
+	});
+
 
 	function ym() {
 		var mi = MONTHS.indexOf(month_field.get_value());

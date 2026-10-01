@@ -2,7 +2,7 @@ import json
 import calendar
 
 import frappe
-from frappe.utils import add_days, cint, flt, get_first_day, getdate, today
+from frappe.utils import add_days, cint, flt, get_first_day, getdate, nowdate, today
 
 PAY_GROUPS = [
     "Mixer Driver", "Pump Driver", "Pump Operator",
@@ -702,8 +702,20 @@ def deduction_sheet(month):
             "probation_end": str(e.custom_probation_end),
             "overdue": 0 if due_this_month else 1})
 
+    # Already-approved (submitted) records for this month: after Review &
+    # Approve runs, the drafts above disappear - without this the sheet
+    # looks wiped and people re-enter everything, creating duplicates.
+    approved = _q(
+        """select a.employee, e.employee_name, a.salary_component, a.amount
+           from `tabAdditional Salary` a
+           join `tabEmployee` e on e.name = a.employee
+           where a.docstatus=1 and ifnull(a.disabled,0)=0
+             and a.payroll_date between %(f)s and %(t)s
+           order by e.employee_name""",
+        {"f": m_start, "t": m_end})
+
     return {"month": month, "month_end": m_end, "prev_month_end": prev_end,
-            "basics": basics,
+            "basics": basics, "approved": approved,
             "loans": loans, "drafts": drafts, "prev_advances": prev_adv,
             "employees": employees,
             "bases": base_map,
@@ -2320,17 +2332,62 @@ _PAYE_SLABS = [(490.0, 0.0), (110.0, 0.05), (130.0, 0.10),
 _ALLOW_COMPONENTS = ['Housing Allowance', 'Transport Allowance',
                      'Extra Duty Allowance']
 
-def _paye_monthly(taxable):
+def _paye_from_bands(taxable, bands, top_rate):
     t, tax = _flt(taxable), 0.0
-    for width, rate in _PAYE_SLABS:
+    for width, rate in bands:
         if t <= 0:
             break
         band = min(t, width)
         tax += band * rate
         t -= band
     if t > 0:
-        tax += t * 0.35
+        tax += t * top_rate
     return round(tax, 2)
+
+def _active_paye_slabs(on_date=None):
+    """Width/rate bands + top rate taken from the live Income Tax Slab that
+    is enabled and effective on on_date (default today) - i.e. the SAME slab
+    ERPNext will use on the salary slip. September 2026 lesson: GRA changed
+    the bands mid-year and the hardcoded maths silently aimed at the old
+    ones, so every solver target landed a few cedis off. The hardcoded
+    _PAYE_SLABS now serve only as a fallback if no slab can be read."""
+    on_date = on_date or nowdate()
+    cache = getattr(frappe.local, '_bgl_paye_cache', None)
+    if cache is None:
+        cache = frappe.local._bgl_paye_cache = {}
+    key = str(on_date)
+    if key in cache:
+        return cache[key]
+    bands, top = list(_PAYE_SLABS), 0.35
+    try:
+        slab = frappe.get_all('Income Tax Slab',
+            filters={'docstatus': 1, 'disabled': 0,
+                     'effective_from': ['<=', on_date]},
+            fields=['name'], order_by='effective_from desc', limit=1)
+        if slab:
+            rows = frappe.get_all('Taxable Salary Slab',
+                filters={'parent': slab[0].name},
+                fields=['from_amount', 'to_amount', 'percent_deduction'])
+            rows.sort(key=lambda r: _flt(r.from_amount))
+            got, prev_to = [], 0.0
+            for r in rows:
+                if _flt(r.to_amount) >= 1e9:
+                    top = _flt(r.percent_deduction) / 100.0
+                    continue
+                width = round(_flt(r.to_amount) - prev_to, 2)
+                prev_to = _flt(r.to_amount)
+                if width > 0:
+                    got.append((width, _flt(r.percent_deduction) / 100.0))
+            if got:
+                bands = got
+    except Exception:
+        pass  # never let a slab-read problem take the solver down
+    cache[key] = (bands, top)
+    return cache[key]
+
+def _paye_monthly(taxable, on_date=None):
+    bands, top = _active_paye_slabs(on_date)
+    return _paye_from_bands(taxable, bands, top)
 
 def _ot_tax_of(ot_total, basic):
     ot, half = _flt(ot_total), _flt(basic) / 2.0
@@ -2340,10 +2397,10 @@ def _ot_tax_of(ot_total, basic):
         return round(ot * 0.05, 2)
     return round(half * 0.05 + (ot - half) * 0.10, 2)
 
-def _slip_math(basic, allowances):
+def _slip_math(basic, allowances, on_date=None):
     basic, allowances = _flt(basic), _flt(allowances)
     ssnit = round(basic * 0.055, 2)
-    paye = _paye_monthly(basic + allowances - ssnit)
+    paye = _paye_monthly(basic + allowances - ssnit, on_date)
     gross = round(basic + allowances, 2)
     return {'basic': round(basic, 2), 'allowances': round(allowances, 2),
             'gross': gross, 'ssnit': ssnit, 'paye': paye,
@@ -2483,6 +2540,9 @@ def solver_apply(employee, month, basic, housing, transport, eda, note=None):
             else:
                 frappe.delete_doc('Additional Salary', row.name, force=1)
                 made.append('deleted draft ' + row.name)
+        if _flt(amt) <= 0:
+            made.append('%s left empty' % comp)   # ERPNext refuses a
+            continue                              # zero-amount record
         ads = frappe.new_doc('Additional Salary')
         ads.update({'employee': employee, 'salary_component': comp,
                     'amount': _flt(amt), 'payroll_date': m_end,
@@ -2931,3 +2991,198 @@ def settle_loan(loan, action, month=None):
     doc.save()
     made.append('status -> %s (balance %s)' % (action, bal))
     return {'employee_name': doc.employee_name, 'balance': bal, 'made': made}
+
+
+# ======================================================================
+# v1.33.0 - PAYE revision sweep: when GRA changes the tax bands mid-year,
+# every salary that was reverse-engineered from an agreed take-home lands
+# a few cedis off on the slip. The sweep shows, per draft slip, the net
+# the package USED to produce (old bands) next to what it produces now,
+# and re-solves the allowances so the employee keeps the old figure.
+# ======================================================================
+
+def _swept_already(employee, month, m_start, m_end):
+    if frappe.db.exists('Additional Salary',
+            {'employee': employee, 'docstatus': 1,
+             'payroll_date': ['between', [m_start, m_end]],
+             'custom_bgl_note': ['like', 'PAYE revision sweep%']}):
+        return True
+    return bool(frappe.db.exists('Comment',
+        {'reference_doctype': 'Employee', 'reference_name': employee,
+         'content': ['like', 'PAYE revision sweep %s%%' % month]}))
+
+
+def _sweep_slip_parts(slip_name):
+    """Basic and H/T/E totals out of one slip's earnings rows."""
+    basic, h, t, e = 0.0, 0.0, 0.0, 0.0
+    for r in frappe.get_all('Salary Detail',
+            filters={'parent': slip_name, 'parentfield': 'earnings'},
+            fields=['salary_component', 'amount']):
+        a = _flt(r.amount)
+        if r.salary_component == 'Basic Salary':
+            basic += a
+        elif r.salary_component == 'Housing Allowance':
+            h += a
+        elif r.salary_component == 'Transport Allowance':
+            t += a
+        elif r.salary_component == 'Extra Duty Allowance':
+            e += a
+    return basic, h, t, e
+
+
+def _net_on_bands(basic, allow, bands, top):
+    ssnit = round(_flt(basic) * 0.055, 2)
+    paye = _paye_from_bands(_flt(basic) + _flt(allow) - ssnit, bands, top)
+    return round(_flt(basic) + _flt(allow) - ssnit - paye, 2)
+
+
+@frappe.whitelist()
+def paye_sweep(month):
+    """One row per draft slip whose base net (basic + H/T/E after SSNIT and
+    PAYE; trips, OT and deductions excluded) changed between the old
+    hardcoded bands and the slab now live on the site."""
+    _require_access()
+    m_start, m_end = _month_bounds(month)
+    new_bands, new_top = _active_paye_slabs(m_end)
+    old_bands, old_top = list(_PAYE_SLABS), 0.35
+    if [tuple(x) for x in new_bands] == [tuple(x) for x in old_bands]:
+        return {'rows': [], 'same_slab': 1}
+    slips = frappe.get_all('Salary Slip',
+        filters={'start_date': m_start, 'docstatus': 0},
+        fields=['name', 'employee', 'employee_name'],
+        order_by='employee_name', limit_page_length=0)
+    rows = []
+    for s in slips:
+        basic, h, t, e = _sweep_slip_parts(s.name)
+        if basic <= 0:
+            continue
+        allow = round(h + t + e, 2)
+        old_net = _net_on_bands(basic, allow, old_bands, old_top)
+        new_net = _net_on_bands(basic, allow, new_bands, new_top)
+        delta = round(old_net - new_net, 2)
+        if abs(delta) < 0.01:
+            continue
+        ssa_base = _flt(frappe.db.get_value('Salary Structure Assignment',
+            {'employee': s.employee, 'docstatus': 1,
+             'from_date': ['<=', m_end]}, 'base',
+            order_by='from_date desc'))
+        skip, plan = '', ''
+        sug_basic = sug_allow = None
+        if _swept_already(s.employee, month, m_start, m_end):
+            skip = ('already swept - the base take-home is held at the '
+                    'old figure; applying again would drift it')
+        elif abs(ssa_base - basic) > 0.02:
+            skip = ('part-month or special basic (slip %s vs assignment %s) '
+                    '- use the Fix button instead' % (basic, ssa_base))
+        else:
+            plan, sug_basic, sug_allow = _sweep_plan(
+                basic, h, t, e, old_net, m_end)
+        rows.append({'employee': s.employee,
+                     'employee_name': s.employee_name,
+                     'basic': round(basic, 2), 'allowances': allow,
+                     'old_net': old_net, 'new_net': new_net,
+                     'delta': delta, 'skip': skip, 'plan': plan,
+                     'suggested_basic': sug_basic,
+                     'suggested_allowances': sug_allow})
+    return {'rows': rows, 'same_slab': 0}
+
+
+def _sweep_plan(basic, h0, t0, e0, target, m_end):
+    """How to hold this package at `target` under the live slab, with the
+    exact figures. Allowances are the gentle fix (SSNIT, and therefore the
+    employer's 13%% share, stay put); when they cannot reach - a basic-only
+    package, or a claw-back below the basic floor - the sweep solves the
+    BASIC instead, so no row is ever left without a concrete suggestion."""
+    a0 = round(h0 + t0 + e0, 2)
+    floor = _slip_math(basic, 0, m_end)['net']
+    if a0 > 0 and floor <= target + 0.01:
+        A = _solve_var(target, lambda x: _slip_math(basic, x, m_end)['net'])
+        return 'allowances', None, round(A, 2)
+    B = _solve_var(target, lambda x: _slip_math(x, a0, m_end)['net'])
+    return 'basic', round(B, 2), None
+
+
+@frappe.whitelist()
+def paye_sweep_apply(month, employee):
+    """Hold ONE person's base take-home at the old-band figure: re-solve
+    the allowance pool under the live slab (same per-component proportions)
+    and write it through solver_apply, which also rebuilds the draft slip."""
+    _require_access()
+    m_start, m_end = _month_bounds(month)
+    slip = frappe.db.get_value('Salary Slip',
+        {'employee': employee, 'start_date': m_start, 'docstatus': 0}, 'name')
+    if not slip:
+        frappe.throw('No draft slip for this employee in %s.' % month)
+    if _swept_already(employee, month, m_start, m_end):
+        frappe.throw('Already swept this month - applying again would '
+                     'drift the figure.')
+    basic, h0, t0, e0 = _sweep_slip_parts(slip)
+    a0 = round(h0 + t0 + e0, 2)
+    old_bands, old_top = list(_PAYE_SLABS), 0.35
+    target = _net_on_bands(basic, a0, old_bands, old_top)
+
+    ssa_base = _flt(frappe.db.get_value('Salary Structure Assignment',
+        {'employee': employee, 'docstatus': 1, 'from_date': ['<=', m_end]},
+        'base', order_by='from_date desc'))
+    if abs(ssa_base - basic) > 0.02:
+        frappe.throw('Slip basic differs from the salary assignment '
+                     '(part-month?). Use the Fix button for this person.')
+    plan, sug_basic, A = _sweep_plan(basic, h0, t0, e0, target, m_end)
+    if plan == 'allowances':
+        if a0 > 0:
+            h = round(A * h0 / a0, 2)
+            t = round(A * t0 / a0, 2)
+        else:
+            h = round(A * 0.4, 2)
+            t = round(A * 0.3, 2)
+        e = round(A - h - t, 2)
+        use_basic = basic
+        how = 'allowances re-solved'
+    else:
+        use_basic = sug_basic
+        h, t, e = round(h0, 2), round(t0, 2), round(e0, 2)
+        how = 'basic moved %s -> %s' % (round(basic, 2), use_basic)
+    res = solver_apply(employee, month, use_basic, h, t, e,
+        note='PAYE revision sweep %s: holding base take-home at %s under '
+             'the live tax slab (%s)' % (month, target, how))
+    # durable marker: the basic-plan path may write no ADS at all (a
+    # basic-only package), so the drift guard anchors on this comment
+    frappe.get_doc({'doctype': 'Comment', 'comment_type': 'Info',
+        'reference_doctype': 'Employee', 'reference_name': employee,
+        'content': 'PAYE revision sweep %s: held base take-home at %s (%s)'
+                   % (month, target, how)}).insert(ignore_permissions=True)
+    return {'employee': employee, 'target': target, 'plan': plan,
+            'basic': use_basic, 'housing': h, 'transport': t, 'eda': e,
+            'new_net': res.get('new_net')}
+
+
+@frappe.whitelist()
+def paye_sweep_apply_all(month, employees):
+    _require_access()
+    if isinstance(employees, str):
+        employees = json.loads(employees)
+    done, failed = [], []
+    for emp in employees:
+        try:
+            r = paye_sweep_apply(month, emp)
+            frappe.db.commit()   # each person stands alone: one failure
+            done.append(r)       # must never undo the people already fixed
+        except Exception as ex:
+            frappe.db.rollback()
+            failed.append({'employee': emp, 'error': str(ex)})
+    return {'done': done, 'failed': failed}
+
+
+@frappe.whitelist()
+def suggest_month():
+    """The month the payroll pages should open on: the previous month for
+    as long as its payroll is not submitted (the first days of a month are
+    almost always spent finishing the previous one), else the current."""
+    _require_access()
+    t = getdate(nowdate())
+    first = t.replace(day=1)
+    prev_end = add_days(first, -1)
+    prev = prev_end.strftime('%Y-%m')
+    closed = frappe.db.exists('Salary Slip',
+        {'start_date': prev + '-01', 'docstatus': 1})
+    return {'month': t.strftime('%Y-%m') if closed else prev}

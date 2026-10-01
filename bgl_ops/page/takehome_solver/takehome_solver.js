@@ -4,6 +4,106 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 	var body = $('<div style="margin:10px 20px 40px;max-width:860px"></div>').appendTo(page.main);
 	page.add_inner_button('Set / Correct Salary', function() { salary_wizard(); });
 	page.add_inner_button('Employee Leaving', function() { leaving_wizard(); });
+	page.add_inner_button('PAYE Correction Sweep', function() { paye_sweep(); });
+
+	function paye_sweep() {
+		var month = g.find('#th-month').val();
+		var label = g.find('#th-month option:selected').text();
+		var d = new frappe.ui.Dialog({
+			title: 'PAYE Correction Sweep - ' + label,
+			size: 'extra-large',
+			fields: [{ fieldname: 'body', fieldtype: 'HTML' }],
+			primary_action_label: 'Apply to selected',
+			primary_action: function() {
+				var picked = [];
+				d.$wrapper.find('.pcs-pick:checked').each(function() {
+					picked.push($(this).data('emp'));
+				});
+				if (!picked.length) { frappe.msgprint('Nothing ticked.'); return; }
+				var n_basic = d.$wrapper.find('.pcs-pick:checked').filter(function() {
+					return $(this).data('plan') === 'basic'; }).length;
+				frappe.confirm(
+					'Hold the OLD base take-home for <b>' + picked.length +
+					'</b> employee(s)? Each package is re-solved under the live ' +
+					'tax slab exactly as the Suggested fix column shows, and each ' +
+					'draft slip is rebuilt. The company absorbs the PAYE difference ' +
+					'from now on.' +
+					(n_basic ? '<br><br><b>' + n_basic + '</b> of them change BASIC ' +
+						'salary (they have no allowances to carry the correction), ' +
+						'which also moves SSNIT - theirs and the employer 13% share.' : ''),
+					function() {
+						frappe.call({ method: 'bgl_ops.api.paye_sweep_apply_all',
+							args: { month: month, employees: picked },
+							freeze: true, freeze_message: 'Re-solving ' + picked.length + ' package(s)...',
+							callback: function(r) {
+								var m = r.message || {};
+								var h = (m.done || []).length + ' adjusted.';
+								if ((m.failed || []).length)
+									h += '<br><br><b>Could not adjust:</b><br>' + m.failed.map(function(f) {
+										return f.employee + ': ' + frappe.utils.escape_html(String(f.error).slice(0, 160));
+									}).join('<br>');
+								frappe.msgprint({ title: 'Sweep finished', indicator: (m.failed || []).length ? 'orange' : 'green', message: h });
+								load_rows();
+							} });
+					});
+			}
+		});
+		function fmtn(v) { return format_number(v, null, 2); }
+		function load_rows() {
+			d.fields_dict.body.$wrapper.html('<div style="padding:30px;text-align:center;color:var(--text-muted)">Comparing every draft slip against the old tax bands...</div>');
+			frappe.call({ method: 'bgl_ops.api.paye_sweep', args: { month: month },
+				callback: function(r) {
+					var m = r.message || {};
+					if (m.same_slab) {
+						d.fields_dict.body.$wrapper.html('<div style="padding:24px">The live tax slab matches the old bands - there is nothing to correct.</div>');
+						return;
+					}
+					if (!(m.rows || []).length) {
+						d.fields_dict.body.$wrapper.html('<div style="padding:24px">No draft slip moved. Either payroll has not been drafted for ' + label + ' yet (run it from Review &amp; Approve first), or every package already nets the same.</div>');
+						return;
+					}
+					var fixable = m.rows.filter(function(x) { return !x.skip; });
+					var h = '<div style="font-size:12.5px;margin-bottom:8px;color:var(--text-muted)">' +
+						'<b>Agreed figure</b> is what this package paid under the old PAYE bands - the number management promised. ' +
+						'<b>Draft slip now</b> is what the new bands pay. <b>Suggested fix</b> is the exact change that restores the agreed figure: ' +
+						'usually the allowance pool, or a corrected BASIC when there are no allowances to carry it. ' +
+						'Ticked rows are applied as suggested; the company absorbs the difference. ' +
+						'Rows in grey cannot be auto-adjusted - the note says which tool to use.</div>' +
+						'<table class="table table-sm" style="font-size:12.5px"><thead><tr>' +
+						'<th><input type="checkbox" id="pcs-all" checked></th><th>Employee</th>' +
+						'<th style="text-align:right">Basic</th><th style="text-align:right">Allowances</th>' +
+						'<th style="text-align:right">Agreed figure</th><th style="text-align:right">Draft slip now</th>' +
+						'<th style="text-align:right">Difference</th><th>Suggested fix</th><th>Note</th></tr></thead><tbody>';
+					m.rows.forEach(function(x) {
+						var col = x.delta > 0 ? 'var(--red-500)' : 'var(--green-600)';
+						var fix = '';
+						if (!x.skip && x.plan === 'allowances')
+							fix = 'allowances ' + fmtn(x.allowances) + ' &rarr; <b>' + fmtn(x.suggested_allowances) + '</b>';
+						else if (!x.skip && x.plan === 'basic')
+							fix = '<span style="color:var(--orange-500)">basic ' + fmtn(x.basic) + ' &rarr; <b>' + fmtn(x.suggested_basic) + '</b></span>';
+						h += '<tr' + (x.skip ? ' style="opacity:.5"' : '') + '>' +
+							'<td>' + (x.skip ? '' : '<input type="checkbox" class="pcs-pick" data-emp="' + x.employee + '" data-plan="' + (x.plan || '') + '" checked>') + '</td>' +
+							'<td>' + frappe.utils.escape_html(x.employee_name) + '</td>' +
+							'<td style="text-align:right">' + fmtn(x.basic) + '</td>' +
+							'<td style="text-align:right">' + fmtn(x.allowances) + '</td>' +
+							'<td style="text-align:right;font-weight:700">' + fmtn(x.old_net) + '</td>' +
+							'<td style="text-align:right">' + fmtn(x.new_net) + '</td>' +
+							'<td style="text-align:right;color:' + col + ';font-weight:700">' +
+								(x.delta > 0 ? 'short ' : 'over ') + fmtn(Math.abs(x.delta)) + '</td>' +
+							'<td style="font-size:11.5px">' + fix + '</td>' +
+							'<td style="font-size:11.5px;color:var(--text-muted)">' + frappe.utils.escape_html(x.skip || '') + '</td></tr>';
+					});
+					h += '</tbody></table>' +
+						'<div style="font-size:12px;color:var(--text-muted)">' + fixable.length + ' of ' + m.rows.length + ' can be adjusted here. Untick anyone management wants left on the new-band figure (e.g. people whose tax went DOWN).</div>';
+					d.fields_dict.body.$wrapper.html(h);
+					d.$wrapper.find('#pcs-all').on('change', function() {
+						d.$wrapper.find('.pcs-pick').prop('checked', this.checked);
+					});
+				} });
+		}
+		d.show();
+		load_rows();
+	}
 
 	function salary_wizard() {
 		var month = g.find('#th-month').val();
@@ -74,7 +174,8 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 			fields: [
 				{ fieldname: 'employee', label: 'Employee', fieldtype: 'Link',
 					options: 'Employee', reqd: 1, default: emp.get_value() || undefined,
-					get_query: function() { return { filters: { status: 'Active' } }; } },
+					get_query: function() { return { filters: { status: ['in', ['Active', 'Inactive']] } }; },
+					description: 'Inactive people are listed too, so a leaver deactivated by hand can still be cleaned up here.' },
 				{ fieldname: 'relieving_date', label: 'Last working day',
 					fieldtype: 'Date', reqd: 1, default: frappe.datetime.get_today() },
 				{ fieldname: 'loan_action', label: 'Outstanding loan becomes',

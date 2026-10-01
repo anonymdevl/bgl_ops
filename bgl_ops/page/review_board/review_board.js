@@ -9,6 +9,20 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 		fieldname: 'month', label: 'Month', fieldtype: 'Select',
 		options: MONTHS.join('\n'), default: MONTHS[new Date().getMonth()]
 	});
+	// v1.33.0: in the first days of a month everyone is still finishing the
+	// PREVIOUS month's payroll, so opening on the calendar month showed a
+	// blank sheet and people thought their work was lost. Ask the server
+	// which month is actually in play and switch to it before first load.
+	frappe.call({ method: 'bgl_ops.api.suggest_month' }).then(function(r) {
+		var m = (r.message || {}).month;
+		if (!m) return;
+		var want = MONTHS[parseInt(m.slice(5, 7), 10) - 1];
+		if (month_field.get_value() !== want) {
+			month_field.set_value(want);
+			setTimeout(load, 50);
+		}
+	});
+
 	function ym() {
 		var mi = MONTHS.indexOf(month_field.get_value());
 		var now = new Date(), y = now.getFullYear();
@@ -116,7 +130,8 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 			fields: [
 				{ fieldname: 'employee', label: 'Employee', fieldtype: 'Link',
 					options: 'Employee', reqd: 1,
-					get_query: function() { return { filters: { status: 'Active' } }; } },
+					get_query: function() { return { filters: { status: ['in', ['Active', 'Inactive']] } }; },
+					description: 'Inactive people are listed too, so a leaver deactivated by hand can still be cleaned up here.' },
 				{ fieldname: 'relieving_date', label: 'Last working day',
 					fieldtype: 'Date', reqd: 1, default: frappe.datetime.get_today() },
 				{ fieldname: 'loan_action', label: 'Outstanding loan becomes',
@@ -663,6 +678,16 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 	}
 
 	var payTimer = null;
+	var watch_until = 0;
+	function start_watch() {
+		// v1.33.0: the progress view must NEVER depend on the click's HTTP
+		// response arriving (144 slips once took long enough that the reply
+		// was lost and the screen just sat there). From the moment of the
+		// click the board polls on its own until the server says done.
+		watch_until = Date.now() + 10 * 60 * 1000;
+		if (payTimer) clearTimeout(payTimer);
+		payTimer = setTimeout(render_payzone, 2000);
+	}
 	function render_payzone() {
 		if (payTimer) { clearTimeout(payTimer); payTimer = null; }
 		var d = state.data;
@@ -714,8 +739,17 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 					payTimer = setTimeout(render_payzone, 2500);
 				}
 				if (st.phase === 'drafts_ready') {
-					var clean = !(st.anomalies || []).length && st.recon_ok;
-					h += btn('rvb-submit', clean ? 'Submit all salary slips' : 'Submit anyway (I have read the notes above)', clean);
+					if (st.submitted > 0 && st.submitted < st.expected) {
+						var spct = st.expected ? Math.min(100, Math.round(st.submitted * 100 / st.expected)) : 0;
+						h += '<div class="rvb-prog">' +
+							'<div class="num">' + st.submitted + '<small> / ' + st.expected + ' submitted</small></div>' +
+							'<div class="rvb-rail"><div class="rvb-fill" style="width:' + spct + '%"></div></div>' +
+							'<div class="rvb-stage">Submitting salary slips...</div></div>';
+						payTimer = setTimeout(render_payzone, 2500);
+					} else {
+						var clean = !(st.anomalies || []).length && st.recon_ok;
+						h += btn('rvb-submit', clean ? 'Submit all salary slips' : 'Submit anyway (I have read the notes above)', clean);
+					}
 				}
 				if (st.phase === 'submitted') {
 					h += '<div class="rvb-warn" style="border-color:var(--green-600);background:rgba(47,181,111,.07);color:var(--text-color)">' +
@@ -724,6 +758,13 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 				if (st.submitted && st.submitted < st.expected && st.phase !== 'drafts_ready') {
 					payTimer = setTimeout(render_payzone, 5000);
 				}
+			}
+			if (!payTimer && watch_until > Date.now() &&
+					st.phase !== 'submitted') {
+				// a click is being watched but no loop is running yet
+				// (entry not visible to the server yet, or slips/queue
+				// momentarily quiet) - keep looking
+				payTimer = setTimeout(render_payzone, 3000);
 			}
 			box.html(h);
 			if (st.phase === 'creating' && st.created > 0) {
@@ -735,11 +776,13 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 				});
 			}
 			if (st.phase === 'drafts_ready' && !box.data('celebrated')) {
+				if (!(st.submitted > 0 && st.submitted < st.expected)) watch_until = 0;
 				box.data('celebrated', 1);
 				box.children().first().addClass('rvb-donepulse');
 				frappe.show_alert({ message: 'All ' + st.created + ' slips drafted - run the final check below.', indicator: 'green' }, 6);
 			}
 			if (st.phase === 'submitted' && !box.data('cheered')) {
+				watch_until = 0;
 				box.data('cheered', 1);
 				frappe.show_alert({ message: 'Payroll submitted. ' + st.submitted + ' people are getting paid.', indicator: 'green' }, 8);
 			}
@@ -759,13 +802,14 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 							render_payzone();
 						} });
 				}
-				frappe.confirm('Create the ' + state.month + ' Payroll Entry now? Settings copy from last month; every salary slip is created as a DRAFT for the final check.', function() { go(0); });
+				frappe.confirm('Create the ' + state.month + ' Payroll Entry now? Settings copy from last month; every salary slip is created as a DRAFT for the final check.', function() { start_watch(); go(0); });
 			});
 			box.find('#rvb-submit').on('click', function() {
 				var clean = !(st.anomalies || []).length && st.recon_ok;
 				frappe.confirm(clean ?
 					'Submit ALL ' + st.created + ' salary slips? This is the final commit - money becomes payable.' :
 					'There are unresolved notes above. Submit ALL slips anyway?', function() {
+					start_watch();
 					frappe.call({ method: 'bgl_ops.api.submit_payroll',
 						args: { month: state.month, confirm: clean ? 0 : 1 }, freeze: true,
 						freeze_message: 'Submitting slips...',

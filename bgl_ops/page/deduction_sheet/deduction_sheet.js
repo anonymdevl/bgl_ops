@@ -14,6 +14,20 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		options: MONTHS.join('\n'),
 		default: MONTHS[new Date().getMonth()]
 	});
+	// v1.33.0: in the first days of a month everyone is still finishing the
+	// PREVIOUS month's payroll, so opening on the calendar month showed a
+	// blank sheet and people thought their work was lost. Ask the server
+	// which month is actually in play and switch to it before first load.
+	frappe.call({ method: 'bgl_ops.api.suggest_month' }).then(function(r) {
+		var m = (r.message || {}).month;
+		if (!m) return;
+		var want = MONTHS[parseInt(m.slice(5, 7), 10) - 1];
+		if (month_field.get_value() !== want) {
+			month_field.set_value(want);
+			setTimeout(load_sheet, 50);
+		}
+	});
+
 
 	function ym() {
 		var mi = MONTHS.indexOf(month_field.get_value());
@@ -225,8 +239,28 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			'<td id="tot-bs-cur"></td><td></td><td id="tot-bs-new"></td></tr>';
 		h += '</tbody></table></div></div>';
 
+		function approved_banner(comps, what) {
+			var rows = (d.approved || []).filter(function(a) {
+				return comps.indexOf(a.salary_component) !== -1; });
+			if (!rows.length) return '';
+			var tot = 0;
+			var inner = rows.map(function(a) {
+				tot += flt(a.amount);
+				return '<tr><td class="l">' + frappe.utils.escape_html(a.employee_name) + '</td>' +
+					(comps.length > 1 ? '<td class="l">' + a.salary_component + '</td>' : '') +
+					'<td style="text-align:right">' + fmt(a.amount) + '</td></tr>';
+			}).join('');
+			return '<details class="dds-approved" style="border:1px solid var(--green-600);border-radius:10px;padding:8px 14px;margin:0 0 12px;background:rgba(47,181,111,.06)">' +
+				'<summary style="cursor:pointer;font-weight:700;color:var(--green-600)">&#10003; ' +
+				rows.length + ' ' + what + ' already APPROVED for ' + label + ' - total ' + fmt(tot) +
+				'. Payroll deducts these; nothing was lost.</summary>' +
+				'<div style="font-size:12px;color:var(--text-muted);margin:6px 0">The boxes below are empty because approval locked these in. Only type here again if a NEW, additional entry is genuinely needed - it would be added on top after another approval.</div>' +
+				'<table class="dds-t" style="margin-top:4px"><tbody>' + inner + '</tbody></table></details>';
+		}
+
 		h += '<div class="dds-pane" data-pane="loans">';
 		h += signoff_bar('Loans') + filter_box('loans');
+		h += approved_banner(['Loans'], 'loan deduction(s)');
 		h += '<h4>1. Loans - ' + label + '</h4>' +
 			'<p class="sect-note">Pre-filled with each loan\'s agreed installment, capped at the balance. Set 0 to skip this month.</p>' +
 			'<table class="dds-t" id="dds-loans"><thead><tr>' +
@@ -250,6 +284,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 
 		h += '<div class="dds-pane" data-pane="adv">';
 		h += signoff_bar('Advances') + filter_box('adv');
+		h += approved_banner(['Salary Advance'], 'advance(s)');
 		h += '<h4>2. Salary Advances - ' + label + '</h4>' +
 			'<p class="sect-note">Everyone who took an advance last month is listed, but every box starts at <b>0</b> - an advance is a one-off, not a standing deduction. Type an amount only for people who took one this month. The Last month column is there to jog the memory, nothing more. Advances are deducted in full this same month.</p>' +
 			'<table class="dds-t" id="dds-adv"><thead><tr>' +
@@ -279,6 +314,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 
 		h += '<div class="dds-pane" data-pane="abs">';
 		h += signoff_bar('Absences') + filter_box('abs');
+		h += approved_banner(['Absent'], 'absence deduction(s)');
 		h += '<h4>3. Absent Days - ' + label + '</h4>' +
 			'<p class="sect-note">Enter DAYS only. The sheet computes the full amount ((days / 22) x Basic) and creates the Absent deduction draft exactly as HR uploads it today - offsetting net pay.</p>' +
 			'<table class="dds-t" id="dds-abs"><thead><tr>' +
@@ -297,6 +333,8 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 
 		h += '<div class="dds-pane" data-pane="allow">';
 		h += signoff_bar('Allowances and OT') + filter_box('allow');
+		h += approved_banner(['Housing Allowance', 'Transport Allowance',
+			'Extra Duty Allowance', 'Overtime Allowance'], 'allowance/OT record(s)');
 		h += '<h4>4. Fixed Allowances and Overtime - ' + label + '</h4>' +
 			'<p class="sect-note">Carried forward from last month - edit only what changed. Employees on Trips or Cubic have the fixed OT cell locked (one overtime type per person).</p>' +
 			'<table class="dds-t" id="dds-allow"><thead><tr>' +
