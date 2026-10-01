@@ -1,3 +1,10 @@
+## v1.33.9 - 2026-10-01
+
+- Solver/sweep no longer collides with FUTURE-dated salary assignments
+  ("SSA already exists"): it models on the assignment effective for the
+  month being corrected, keeps a same-base month assignment in place
+  instead of churning it, and only replaces when the base truly changes.
+
 ## v1.33.8 - 2026-10-01
 
 - PAYE sweep applies (and previews) now run in small chunks with a

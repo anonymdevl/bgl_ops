@@ -2551,26 +2551,38 @@ def solver_apply(employee, month, basic, housing, transport, eda, note=None):
                      'Cancel it first - the solver never edits paid history.'
                      % (emp.employee_name, month))
     made, note = [], (note or 'Set by Take-Home Solver')
-    last = frappe.get_all('Salary Structure Assignment',
+    rows = frappe.get_all('Salary Structure Assignment',
         filters={'employee': employee, 'docstatus': 1},
-        fields=['name', 'from_date', 'salary_structure', 'income_tax_slab',
-                'payroll_payable_account', 'company'],
-        order_by='from_date desc', limit=1)
-    if not last:
+        fields=['name', 'from_date', 'base', 'salary_structure',
+                'income_tax_slab', 'payroll_payable_account', 'company'],
+        order_by='from_date desc')
+    if not rows:
         frappe.throw('%s has no salary structure assignment to model on.'
                      % emp.employee_name)
-    last = last[0]
-    if str(last.from_date) == str(m_start):
-        frappe.get_doc('Salary Structure Assignment', last.name).cancel()
-        made.append('cancelled ' + last.name)
-    ssa = frappe.new_doc('Salary Structure Assignment')
-    ssa.update({'employee': employee, 'salary_structure': last.salary_structure,
-                'from_date': m_start, 'income_tax_slab': last.income_tax_slab,
-                'payroll_payable_account': last.payroll_payable_account,
-                'company': last.company, 'base': _flt(basic)})
-    ssa.insert()
-    ssa.submit()
-    made.append('SSA %s base %s' % (ssa.name, _flt(basic)))
+    # model on the assignment EFFECTIVE FOR THIS MONTH - a future-dated
+    # (October) assignment must neither be copied nor collided with
+    tmpl = next((r for r in rows if str(r.from_date) <= str(m_start)),
+                rows[-1])
+    at_start = next((r for r in rows
+                     if str(r.from_date) == str(m_start)), None)
+    if at_start and abs(_flt(at_start.base) - _flt(basic)) <= 0.01:
+        made.append('kept SSA %s (base already %s)'
+                    % (at_start.name, _flt(basic)))
+    else:
+        if at_start:
+            frappe.get_doc('Salary Structure Assignment',
+                           at_start.name).cancel()
+            made.append('cancelled ' + at_start.name)
+        ssa = frappe.new_doc('Salary Structure Assignment')
+        ssa.update({'employee': employee,
+                    'salary_structure': tmpl.salary_structure,
+                    'from_date': m_start,
+                    'income_tax_slab': tmpl.income_tax_slab,
+                    'payroll_payable_account': tmpl.payroll_payable_account,
+                    'company': tmpl.company, 'base': _flt(basic)})
+        ssa.insert()
+        ssa.submit()
+        made.append('SSA %s base %s' % (ssa.name, _flt(basic)))
     for comp, amt in zip(_ALLOW_COMPONENTS, [housing, transport, eda]):
         for row in frappe.get_all('Additional Salary',
                 filters={'employee': employee, 'salary_component': comp,
