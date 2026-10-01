@@ -1,3 +1,31 @@
+## v1.33.3 - 2026-10-01
+
+Nobody applies the sweep blind:
+
+- Apply to selected now dry-runs everything first and shows, per person,
+  exactly what the slip will carry - Basic (flagged when it changes),
+  Housing, Transport, Extra Duty, SSNIT, PAYE and the resulting net -
+  before anything is written. Rows that cannot be applied are listed with
+  the reason and skipped. Only after confirming this landing table does
+  the sweep write and rebuild slips.
+- Typing over an Agreed figure recalculates that row's Suggested fix
+  immediately (server-solved, not estimated), so the on-screen suggestion
+  always matches the figure standing in the box.
+
+## v1.33.2 - 2026-10-01
+
+PAYE Correction Sweep becomes the one place the whole correction happens:
+
+- The Agreed figure column is now EDITABLE. It still prefills with the
+  figure derived from the records, but when the records were wrong all
+  along (a package that never actually paid what management promised),
+  type the true figure over it and Apply re-solves the package to exactly
+  that number. The written record notes both figures for audit.
+- Print button on the sweep: a clean one-page table of every row - basic,
+  allowances, agreed figure (as standing on screen), draft-slip-now,
+  difference, suggested fix, note, and whether the row was ticked - for
+  management sign-off before applying.
+
 ## v1.33.1 - 2026-10-01
 
 - Take-Home Solver's month selector now also opens on the month in play

@@ -13,42 +13,117 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 			title: 'PAYE Correction Sweep - ' + label,
 			size: 'extra-large',
 			fields: [{ fieldname: 'body', fieldtype: 'HTML' }],
+			secondary_action_label: 'Print',
+			secondary_action: function() { print_sweep(); },
 			primary_action_label: 'Apply to selected',
 			primary_action: function() {
-				var picked = [];
+				var picked = [], edited = 0;
 				d.$wrapper.find('.pcs-pick:checked').each(function() {
-					picked.push($(this).data('emp'));
+					var $r = $(this).closest('tr');
+					var t = flt($r.find('.pcs-target').val());
+					var derived = flt($r.find('.pcs-target').data('derived'));
+					if (t && Math.abs(t - derived) > 0.01) edited++;
+					picked.push({ employee: $(this).data('emp'), target: t || null });
 				});
 				if (!picked.length) { frappe.msgprint('Nothing ticked.'); return; }
-				var n_basic = d.$wrapper.find('.pcs-pick:checked').filter(function() {
-					return $(this).data('plan') === 'basic'; }).length;
-				frappe.confirm(
-					'Hold the OLD base take-home for <b>' + picked.length +
-					'</b> employee(s)? Each package is re-solved under the live ' +
-					'tax slab exactly as the Suggested fix column shows, and each ' +
-					'draft slip is rebuilt. The company absorbs the PAYE difference ' +
-					'from now on.' +
-					(n_basic ? '<br><br><b>' + n_basic + '</b> of them change BASIC ' +
-						'salary (they have no allowances to carry the correction), ' +
-						'which also moves SSNIT - theirs and the employer 13% share.' : ''),
-					function() {
-						frappe.call({ method: 'bgl_ops.api.paye_sweep_apply_all',
-							args: { month: month, employees: picked },
-							freeze: true, freeze_message: 'Re-solving ' + picked.length + ' package(s)...',
-							callback: function(r) {
-								var m = r.message || {};
-								var h = (m.done || []).length + ' adjusted.';
-								if ((m.failed || []).length)
-									h += '<br><br><b>Could not adjust:</b><br>' + m.failed.map(function(f) {
-										return f.employee + ': ' + frappe.utils.escape_html(String(f.error).slice(0, 160));
-									}).join('<br>');
-								frappe.msgprint({ title: 'Sweep finished', indicator: (m.failed || []).length ? 'orange' : 'green', message: h });
-								load_rows();
-							} });
-					});
+				frappe.call({ method: 'bgl_ops.api.paye_sweep_apply_all',
+					args: { month: month, employees: JSON.stringify(picked), dry_run: 1 },
+					freeze: true, freeze_message: 'Working out what will land on each slip...',
+					callback: function(pr) {
+						var pm = pr.message || {};
+						var prev = pm.done || [];
+						var n_basic = prev.filter(function(x) { return x.plan === 'basic'; }).length;
+						var rows = prev.map(function(x) {
+							return '<tr><td>' + frappe.utils.escape_html(x.employee_name || x.employee) + '</td>' +
+								'<td style="text-align:right">' + fmtn(x.basic) + (x.plan === 'basic' ? ' <b style="color:var(--orange-500)">(new)</b>' : '') + '</td>' +
+								'<td style="text-align:right">' + fmtn(x.housing) + '</td>' +
+								'<td style="text-align:right">' + fmtn(x.transport) + '</td>' +
+								'<td style="text-align:right">' + fmtn(x.eda) + '</td>' +
+								'<td style="text-align:right">-' + fmtn(x.ssnit) + '</td>' +
+								'<td style="text-align:right">-' + fmtn(x.paye) + '</td>' +
+								'<td style="text-align:right;font-weight:800;color:var(--green-600)">' + fmtn(x.net) + '</td>' +
+								(x.edited ? '<td style="font-size:10.5px;color:var(--orange-500)">typed figure</td>' : '<td></td>') + '</tr>';
+						}).join('');
+						var warn = (pm.failed || []).length
+							? '<p style="color:var(--red-500)"><b>Cannot be applied</b> (will be skipped):<br>' +
+								pm.failed.map(function(f) { return f.employee + ': ' + frappe.utils.escape_html(String(f.error).slice(0, 120)); }).join('<br>') + '</p>'
+							: '';
+						var ok = prev.map(function(x) { return { employee: x.employee, target: x.target }; });
+						if (!ok.length) { frappe.msgprint({ title: 'Nothing can be applied', indicator: 'orange', message: warn || 'No rows.' }); return; }
+						frappe.confirm(
+							'<b>This is exactly what each slip will carry</b> (base components only - trips, OT and deductions ride on top as usual):' +
+							'<div style="max-height:45vh;overflow:auto;margin-top:8px"><table class="table table-sm" style="font-size:12px"><thead><tr>' +
+							'<th>Employee</th><th style="text-align:right">Basic</th><th style="text-align:right">Housing</th>' +
+							'<th style="text-align:right">Transport</th><th style="text-align:right">Extra Duty</th>' +
+							'<th style="text-align:right">SSNIT</th><th style="text-align:right">PAYE</th>' +
+							'<th style="text-align:right">Net</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+							warn +
+							(n_basic ? '<p><b>' + n_basic + '</b> row(s) change BASIC salary, which also moves SSNIT - theirs and the employer 13% share.</p>' : '') +
+							'<p>Write these <b>' + ok.length + '</b> package(s) and rebuild their draft slips?</p>',
+							function() {
+								frappe.call({ method: 'bgl_ops.api.paye_sweep_apply_all',
+									args: { month: month, employees: JSON.stringify(ok) },
+									freeze: true, freeze_message: 'Applying ' + ok.length + ' package(s)...',
+									callback: function(r) {
+										var m = r.message || {};
+										var h = (m.done || []).length + ' adjusted.';
+										if ((m.failed || []).length)
+											h += '<br><br><b>Could not adjust:</b><br>' + m.failed.map(function(f) {
+												return f.employee + ': ' + frappe.utils.escape_html(String(f.error).slice(0, 160));
+											}).join('<br>');
+										frappe.msgprint({ title: 'Sweep finished', indicator: (m.failed || []).length ? 'orange' : 'green', message: h });
+										load_rows();
+									} });
+							});
+					} });
 			}
 		});
 		function fmtn(v) { return format_number(v, null, 2); }
+		function print_sweep() {
+			var rows = '';
+			d.$wrapper.find('tbody tr').each(function() {
+				var $r = $(this), tds = $r.find('td');
+				if (tds.length < 9) return;
+				var agreed = $r.find('.pcs-target').length
+					? flt($r.find('.pcs-target').val()) : $(tds[4]).text();
+				var ticked = $r.find('.pcs-pick').length
+					? ($r.find('.pcs-pick').prop('checked') ? 'YES' : 'no') : '-';
+				rows += '<tr><td>' + $(tds[1]).text() + '</td>' +
+					'<td class="r">' + $(tds[2]).text() + '</td>' +
+					'<td class="r">' + $(tds[3]).text() + '</td>' +
+					'<td class="r"><b>' + (typeof agreed === 'number' ? format_number(agreed, null, 2) : agreed) + '</b></td>' +
+					'<td class="r">' + $(tds[5]).text() + '</td>' +
+					'<td class="r">' + $(tds[6]).text() + '</td>' +
+					'<td>' + $(tds[7]).text() + '</td>' +
+					'<td>' + $(tds[8]).text() + '</td>' +
+					'<td class="c">' + ticked + '</td></tr>';
+			});
+			if (!rows) { frappe.msgprint('Nothing to print - load the sweep first.'); return; }
+			var html = '<!doctype html><html><head><meta charset="utf-8"><title>PAYE Correction Sweep - ' + label + '</title><style>' +
+				'body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1f2430;margin:28px}' +
+				'h1{font-size:16px;margin:0 0 2px}h2{font-size:11px;font-weight:400;color:#666;margin:0 0 14px}' +
+				'table{width:100%;border-collapse:collapse}th,td{border:1px solid #c9ccd4;padding:4px 6px;text-align:left}' +
+				'th{background:#f2f3f6;font-size:10px;text-transform:uppercase;letter-spacing:.4px}' +
+				'.r{text-align:right}.c{text-align:center}' +
+				'.foot{margin-top:14px;font-size:10px;color:#666}' +
+				'@media print{body{margin:10mm}}</style></head><body>' +
+				'<h1>PAYE Correction Sweep &mdash; ' + label + '</h1>' +
+				'<h2>Betonsa Ghana Limited &middot; generated ' + frappe.datetime.now_datetime() + ' &middot; agreed figures as standing on screen at print time</h2>' +
+				'<table><thead><tr><th>Employee</th><th class="r">Basic</th><th class="r">Allowances</th>' +
+				'<th class="r">Agreed figure</th><th class="r">Draft slip now</th><th class="r">Difference</th>' +
+				'<th>Suggested fix</th><th>Note</th><th class="c">Ticked</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+				'<div class="foot">Agreed figure = base take-home before trips/cubic, advances, loans and absences. ' +
+				'Ticked rows are re-solved to the agreed figure on Apply; the company absorbs the PAYE difference.</div>' +
+				'</body></html>';
+			var fr = document.createElement('iframe');
+			fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+			document.body.appendChild(fr);
+			fr.contentDocument.open(); fr.contentDocument.write(html); fr.contentDocument.close();
+			setTimeout(function() {
+				fr.contentWindow.focus(); fr.contentWindow.print();
+				setTimeout(function() { fr.remove(); }, 60000);
+			}, 300);
+		}
 		function load_rows() {
 			d.fields_dict.body.$wrapper.html('<div style="padding:30px;text-align:center;color:var(--text-muted)">Comparing every draft slip against the old tax bands...</div>');
 			frappe.call({ method: 'bgl_ops.api.paye_sweep', args: { month: month },
@@ -64,7 +139,7 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 					}
 					var fixable = m.rows.filter(function(x) { return !x.skip; });
 					var h = '<div style="font-size:12.5px;margin-bottom:8px;color:var(--text-muted)">' +
-						'<b>Agreed figure</b> is what this package paid under the old PAYE bands - the number management promised. ' +
+						'<b>Agreed figure</b> is what this package paid under the old PAYE bands, derived from the records. If the records were wrong all along (the derived figure is not what management promised), TYPE the true figure over it - the package is re-solved to whatever stands in that box. ' +
 						'<b>Draft slip now</b> is what the new bands pay. <b>Suggested fix</b> is the exact change that restores the agreed figure: ' +
 						'usually the allowance pool, or a corrected BASIC when there are no allowances to carry it. ' +
 						'Ticked rows are applied as suggested; the company absorbs the difference. ' +
@@ -86,7 +161,9 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 							'<td>' + frappe.utils.escape_html(x.employee_name) + '</td>' +
 							'<td style="text-align:right">' + fmtn(x.basic) + '</td>' +
 							'<td style="text-align:right">' + fmtn(x.allowances) + '</td>' +
-							'<td style="text-align:right;font-weight:700">' + fmtn(x.old_net) + '</td>' +
+							'<td style="text-align:right">' + (x.skip
+								? '<span style="font-weight:700">' + fmtn(x.old_net) + '</span>'
+								: '<input type="number" step="0.01" class="pcs-target" data-derived="' + x.old_net + '" value="' + x.old_net + '" style="width:92px;text-align:right;font-weight:700;border:1px solid var(--border-color);border-radius:6px;padding:2px 6px">') + '</td>' +
 							'<td style="text-align:right">' + fmtn(x.new_net) + '</td>' +
 							'<td style="text-align:right;color:' + col + ';font-weight:700">' +
 								(x.delta > 0 ? 'short ' : 'over ') + fmtn(Math.abs(x.delta)) + '</td>' +
@@ -98,6 +175,25 @@ frappe.pages['takehome-solver'].on_page_load = function(wrapper) {
 					d.fields_dict.body.$wrapper.html(h);
 					d.$wrapper.find('#pcs-all').on('change', function() {
 						d.$wrapper.find('.pcs-pick').prop('checked', this.checked);
+					});
+					d.$wrapper.find('.pcs-target').on('change', function() {
+						var $r = $(this).closest('tr');
+						var empid = $r.find('.pcs-pick').data('emp');
+						var t = flt($(this).val());
+						if (!empid || !t) return;
+						var $fix = $r.find('td').eq(7);
+						$fix.html('<span style="color:var(--text-muted)">recalculating...</span>');
+						frappe.call({ method: 'bgl_ops.api.paye_sweep_apply',
+							args: { month: month, employee: empid, target: t, dry_run: 1 },
+							callback: function(r) {
+								var x = r.message || {};
+								$fix.html(x.plan === 'basic'
+									? '<span style="color:var(--orange-500)">basic &rarr; <b>' + fmtn(x.basic) + '</b></span>'
+									: 'allowances &rarr; <b>' + fmtn(flt(x.housing) + flt(x.transport) + flt(x.eda)) + '</b>');
+								$r.find('.pcs-pick').data('plan', x.plan);
+							},
+							error: function() { $fix.html('<span style="color:var(--red-500)">cannot reach that figure</span>'); }
+						});
 					});
 				} });
 		}

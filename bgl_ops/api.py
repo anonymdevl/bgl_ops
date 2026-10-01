@@ -3132,10 +3132,12 @@ def _sweep_plan(basic, h0, t0, e0, target, m_end):
 
 
 @frappe.whitelist()
-def paye_sweep_apply(month, employee):
-    """Hold ONE person's base take-home at the old-band figure: re-solve
-    the allowance pool under the live slab (same per-component proportions)
-    and write it through solver_apply, which also rebuilds the draft slip."""
+def paye_sweep_apply(month, employee, target=None, dry_run=0):
+    """Hold ONE person's base take-home: at the old-band figure derived
+    from their records, or at an explicit management figure typed on the
+    sweep (which also repairs packages that were never solved correctly in
+    the first place). Re-solves under the live slab and rebuilds the
+    draft slip through solver_apply."""
     _require_access()
     m_start, m_end = _month_bounds(month)
     slip = frappe.db.get_value('Salary Slip',
@@ -3148,7 +3150,9 @@ def paye_sweep_apply(month, employee):
     basic, h0, t0, e0 = _sweep_slip_parts(slip)
     a0 = round(h0 + t0 + e0, 2)
     old_bands, old_top = list(_PAYE_SLABS), 0.35
-    target = _net_on_bands(basic, a0, old_bands, old_top)
+    derived = _net_on_bands(basic, a0, old_bands, old_top)
+    target = _flt(target) if _flt(target) > 0 else derived
+    edited = abs(target - derived) > 0.01
 
     ssa_base = _flt(frappe.db.get_value('Salary Structure Assignment',
         {'employee': employee, 'docstatus': 1, 'from_date': ['<=', m_end]},
@@ -3171,9 +3175,21 @@ def paye_sweep_apply(month, employee):
         use_basic = sug_basic
         h, t, e = round(h0, 2), round(t0, 2), round(e0, 2)
         how = 'basic moved %s -> %s' % (round(basic, 2), use_basic)
+    if cint(dry_run):
+        # exactly what the slip will carry - nothing written
+        m = _slip_math(use_basic, h + t + e, m_end)
+        return {'employee': employee,
+                'employee_name': frappe.db.get_value(
+                    'Employee', employee, 'employee_name'),
+                'plan': plan, 'target': target, 'edited': 1 if edited else 0,
+                'basic': m['basic'], 'housing': h, 'transport': t, 'eda': e,
+                'gross': m['gross'], 'ssnit': m['ssnit'], 'paye': m['paye'],
+                'net': m['net'], 'dry_run': 1}
     res = solver_apply(employee, month, use_basic, h, t, e,
-        note='PAYE revision sweep %s: holding base take-home at %s under '
-             'the live tax slab (%s)' % (month, target, how))
+        note='PAYE revision sweep %s: holding base take-home at %s%s under '
+             'the live tax slab (%s)' % (month, target,
+             ' (management figure, records derived %s)' % derived
+             if edited else '', how))
     # durable marker: the basic-plan path may write no ADS at all (a
     # basic-only package), so the drift guard anchors on this comment
     frappe.get_doc({'doctype': 'Comment', 'comment_type': 'Info',
@@ -3186,20 +3202,24 @@ def paye_sweep_apply(month, employee):
 
 
 @frappe.whitelist()
-def paye_sweep_apply_all(month, employees):
+def paye_sweep_apply_all(month, employees, dry_run=0):
     _require_access()
     if isinstance(employees, str):
         employees = json.loads(employees)
     done, failed = [], []
-    for emp in employees:
+    for item in employees:
+        emp = item.get('employee') if isinstance(item, dict) else item
+        tgt = item.get('target') if isinstance(item, dict) else None
         try:
-            r = paye_sweep_apply(month, emp)
-            frappe.db.commit()   # each person stands alone: one failure
-            done.append(r)       # must never undo the people already fixed
+            r = paye_sweep_apply(month, emp, tgt, dry_run)
+            if not cint(dry_run):
+                frappe.db.commit()   # each person stands alone: one failure
+            done.append(r)           # never undoes people already fixed
         except Exception as ex:
-            frappe.db.rollback()
+            if not cint(dry_run):
+                frappe.db.rollback()
             failed.append({'employee': emp, 'error': str(ex)})
-    return {'done': done, 'failed': failed}
+    return {'done': done, 'failed': failed, 'dry_run': cint(dry_run)}
 
 
 @frappe.whitelist()
