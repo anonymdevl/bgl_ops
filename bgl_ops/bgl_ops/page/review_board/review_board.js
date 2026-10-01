@@ -807,17 +807,31 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 			});
 			box.find('#rvb-refresh').on('click', function() {
 				frappe.confirm(
-					'Rebuild every DRAFT slip for ' + state.month + '? Use this after approving something that arrived late - regenerated trip earnings, sweep corrections - so the drafts pick it up. Submitted slips are never touched.',
+					'Rebuild every DRAFT slip for ' + state.month + '? Use this after approving something that arrived late - regenerated trip earnings, sweep corrections - so the drafts pick it up. Submitted slips are never touched. Runs in the background with a progress bar.',
 					function() {
-						start_watch();
 						frappe.call({ method: 'bgl_ops.api.refresh_draft_slips',
-							args: { month: state.month }, freeze: true,
-							freeze_message: 'Rebuilding draft slips...',
+							args: { month: state.month },
 							callback: function(r) {
-								var m = r.message || {};
-								frappe.show_alert({ message: m.refreshed + ' slip(s) rebuilt.', indicator: 'green' }, 6);
-								if ((m.failed || []).length) frappe.msgprint({ title: 'Could not rebuild', indicator: 'orange', message: m.failed.join('<br>') });
-								render_payzone();
+								var total = (r.message || {}).queued || 0;
+								function poll() {
+									frappe.call({ method: 'bgl_ops.api.refresh_progress',
+										args: { month: state.month },
+										callback: function(p) {
+											var st = p.message || {};
+											if (!st.finished) {
+												frappe.show_progress('Rebuilding draft slips...', st.done || 0, st.total || total,
+													(st.done || 0) + ' of ' + (st.total || total) + ' rebuilt');
+												setTimeout(poll, 2000);
+												return;
+											}
+											frappe.hide_progress();
+											frappe.show_alert({ message: st.done + ' slip(s) rebuilt.', indicator: 'green' }, 6);
+											if ((st.failed || []).length) frappe.msgprint({ title: 'Could not rebuild', indicator: 'orange', message: st.failed.join('<br>') });
+											render_payzone();
+										} });
+								}
+								frappe.show_progress('Rebuilding draft slips...', 0, total || 1, 'starting...');
+								setTimeout(poll, 1500);
 							} });
 					});
 			});

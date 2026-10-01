@@ -1,3 +1,10 @@
+## v1.33.8 - 2026-10-01
+
+- Refresh draft slips now runs as a BACKGROUND job with a live progress
+  bar (X of 144 rebuilt). Rebuilding every slip inside one web request is
+  how the click used to time out at the gateway - the work finished
+  server-side but the screen never heard back.
+
 ## v1.33.7 - 2026-10-01
 
 - Part-month (prorated) rows on the PAYE sweep no longer display a

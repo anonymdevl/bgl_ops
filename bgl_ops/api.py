@@ -3263,29 +3263,70 @@ def paye_sweep_apply_all(month, employees, dry_run=0):
     return {'done': done, 'failed': failed, 'dry_run': cint(dry_run)}
 
 
-@frappe.whitelist()
-def refresh_draft_slips(month, site=None):
-    """Rebuild every DRAFT slip for the month so records approved AFTER
-    the slips were drafted (regenerated trips, sweep corrections) flow in.
-    Submitted slips are never touched."""
-    _require_access()
+def _refresh_key(month):
+    return 'bgl_refresh_%s' % month
+
+
+def _refresh_write(month, state):
+    frappe.cache().set_value(_refresh_key(month), json.dumps(state),
+                             expires_in_sec=7200)
+
+
+def _refresh_job(month, site=None):
+    """Background worker: rebuild every draft slip, one commit each, with
+    progress written to cache for the board to poll."""
     m_start, m_end = _month_bounds(month)
     slips = frappe.get_all('Salary Slip',
         filters={'start_date': m_start, 'docstatus': 0},
         fields=['name', 'employee', 'company'])
-    done, failed = 0, []
+    if site:
+        keep = []
+        for sl in slips:
+            if frappe.db.get_value('Employee', sl.employee,
+                                   'branch') == site:
+                keep.append(sl)
+        slips = keep
+    total, done, failed = len(slips), 0, []
+    _refresh_write(month, {'total': total, 'done': 0,
+                           'failed': [], 'finished': 0})
     for sl in slips:
-        if site and frappe.db.get_value(
-                'Employee', sl.employee, 'branch') != site:
-            continue
         try:
             _rebuild_draft_slip(sl.employee, m_start, m_end, sl.company)
             frappe.db.commit()
             done += 1
         except Exception as ex:
             frappe.db.rollback()
-            failed.append('%s: %s' % (sl.employee, ex))
-    return {'refreshed': done, 'failed': failed[:10]}
+            failed.append('%s: %s' % (sl.employee, str(ex)[:120]))
+        _refresh_write(month, {'total': total, 'done': done,
+                               'failed': failed[:10], 'finished': 0})
+    _refresh_write(month, {'total': total, 'done': done,
+                           'failed': failed[:10], 'finished': 1})
+
+
+@frappe.whitelist()
+def refresh_draft_slips(month, site=None):
+    """Rebuild every DRAFT slip for the month so records approved AFTER
+    the slips were drafted (regenerated trips, sweep corrections) flow in.
+    Submitted slips are never touched. Queued in the background - 144
+    rebuilds in one web request is how the click used to time out."""
+    _require_access()
+    m_start, _ = _month_bounds(month)
+    count = frappe.db.count('Salary Slip',
+                            {'start_date': m_start, 'docstatus': 0})
+    _refresh_write(month, {'total': count, 'done': 0,
+                           'failed': [], 'finished': 0})
+    frappe.enqueue('bgl_ops.api._refresh_job', month=month, site=site,
+                   queue='long', timeout=7200, job_name='bgl_refresh_' + month)
+    return {'queued': count}
+
+
+@frappe.whitelist()
+def refresh_progress(month):
+    _require_access()
+    v = frappe.cache().get_value(_refresh_key(month))
+    if not v:
+        return {'total': 0, 'done': 0, 'failed': [], 'finished': 1}
+    return json.loads(v) if isinstance(v, str) else v
 
 
 @frappe.whitelist()
