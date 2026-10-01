@@ -411,11 +411,14 @@ frappe.pages['trip-log-sheet'].on_page_load = function(wrapper) {
 						frappe.msgprint({
 							title: m.created + ' draft(s) created for payroll date ' + frappe.datetime.str_to_user(m.payroll_date),
 							indicator: 'green',
-							message: '<table class="table table-bordered" style="font-size:12px">' +
+							message: (m.healed ? '<p style="color:var(--green-600)"><b>' + m.healed +
+									' log(s) had no salary component</b> (typically bulk-imported rows) - it was filled in from the rate table automatically and they are included below.</p>' : '') +
+								'<table class="table table-bordered" style="font-size:12px">' +
 								'<tr><th>Employee</th><th>Component</th><th style="text-align:right">Amount</th></tr>' +
 								rows + '</table>' +
 								'<p>Review and submit them under <a href="/app/additional-salary?docstatus=0">Additional Salary (drafts)</a>. ' +
 								'<b>Payroll is not done yet</b> - once submitted, continue with Payroll Entry for the month.</p>' +
+								((m.unresolved && m.unresolved.length) ? '<p style="color:var(--red-500)"><b>No rate found for:</b><br>' + m.unresolved.join('<br>') + '</p>' : '') +
 								((m.errors && m.errors.length) ? '<p style="color:var(--red-500)">' + m.errors.join('<br>') + '</p>' : '')
 						});
 					}

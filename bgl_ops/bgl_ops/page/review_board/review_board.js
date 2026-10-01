@@ -749,6 +749,7 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 					} else {
 						var clean = !(st.anomalies || []).length && st.recon_ok;
 						h += btn('rvb-submit', clean ? 'Submit all salary slips' : 'Submit anyway (I have read the notes above)', clean);
+						h += '<div style="text-align:center;margin-top:-6px"><button id="rvb-refresh" class="btn btn-xs btn-default">Refresh draft slips (pull late approvals)</button></div>';
 					}
 				}
 				if (st.phase === 'submitted') {
@@ -803,6 +804,22 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 						} });
 				}
 				frappe.confirm('Create the ' + state.month + ' Payroll Entry now? Settings copy from last month; every salary slip is created as a DRAFT for the final check.', function() { start_watch(); go(0); });
+			});
+			box.find('#rvb-refresh').on('click', function() {
+				frappe.confirm(
+					'Rebuild every DRAFT slip for ' + state.month + '? Use this after approving something that arrived late - regenerated trip earnings, sweep corrections - so the drafts pick it up. Submitted slips are never touched.',
+					function() {
+						start_watch();
+						frappe.call({ method: 'bgl_ops.api.refresh_draft_slips',
+							args: { month: state.month }, freeze: true,
+							freeze_message: 'Rebuilding draft slips...',
+							callback: function(r) {
+								var m = r.message || {};
+								frappe.show_alert({ message: m.refreshed + ' slip(s) rebuilt.', indicator: 'green' }, 6);
+								if ((m.failed || []).length) frappe.msgprint({ title: 'Could not rebuild', indicator: 'orange', message: m.failed.join('<br>') });
+								render_payzone();
+							} });
+					});
 			});
 			box.find('#rvb-submit').on('click', function() {
 				var clean = !(st.anomalies || []).length && st.recon_ok;

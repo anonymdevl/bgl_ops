@@ -1,3 +1,36 @@
+## v1.33.0 - 2026-10-01
+
+PAYE revision toolkit (the September GRA slab change) + payroll-run polish:
+
+- PAYE bands are now read LIVE from the enabled Income Tax Slab - the same
+  slab the salary slips use - everywhere the app does tax maths: take-home
+  solver, Set/Correct Salary wizard, prep-sheet Fix button, and the
+  new-hire allowance auto-split. The old hardcoded bands remain only as a
+  fallback if the slab cannot be read.
+- New PAYE Correction Sweep on the Take-Home Solver: one table of every
+  draft slip whose base net moved under the new bands, with the agreed
+  (old-band) figure, today's figure, and a concrete Suggested fix per row -
+  allowances re-solved where possible, a corrected BASIC where not (shown
+  in orange; moving basic also moves SSNIT both sides). Tick, apply, done;
+  each person commits independently and can never be swept twice.
+- Generate Trip Earnings now self-heals logs that arrived without a salary
+  component (bulk-imported rows): the component is derived from the rate
+  table exactly like the entry form does, written back, and included in
+  the pull. The result says how many were healed and names any log no
+  rate could be found for.
+- Review board: "Refresh draft slips" button rebuilds all DRAFT slips so
+  late approvals (regenerated trips, sweep fixes) flow in; progress bars
+  now start polling at the click for BOTH green buttons (a lost response
+  can no longer freeze the screen), and submission shows its own
+  "X of Y submitted" bar.
+- Payroll Prep Sheet: an approved month now shows a green "already
+  APPROVED - nothing was lost" summary per tab with the locked amounts,
+  instead of silently empty boxes.
+- Employee Leaving wizard can now reach Inactive employees, so a leaver
+  deactivated by hand can still be cleaned up.
+- All payroll pages open on the month actually in play: the previous
+  month for as long as its payroll is unsubmitted, then the current one.
+
 ## v1.32.0 - 2026-10-01
 
 Name-tied rates (Phase 3 for the chemical pair) + Chemical joins the trip

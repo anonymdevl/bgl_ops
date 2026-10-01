@@ -446,6 +446,34 @@ def generate_payroll_drafts(site, month):
             f"{pending_drafts} log(s) for {site} {month} are still in Draft. "
             "Use 'Submit Month (lock)' first, then generate payroll drafts.")
 
+    # v1.33.0: self-heal logs that arrived without a salary component.
+    # The entry form fills the component from the rate table as you type;
+    # a bulk import does not, and such logs were silently left behind
+    # (September lesson: 1,375 of Tema trips reported as 575). Derive the
+    # component here exactly like the form does and write it back.
+    untagged = _q(
+        """select name, employee, employee_name, pay_group, day_type,
+                  log_date
+           from `tabDaily Trip Log`
+           where docstatus=1 and payroll_month=%(m)s and branch=%(s)s
+             and ifnull(pulled_to_payroll,0)=0 and ifnull(amount,0) > 0
+             and ifnull(salary_component,'') = ''""",
+        {"m": month, "s": site})
+    healed, unresolved = 0, []
+    if untagged:
+        rates = _active_rates()
+        for l in untagged:
+            r = _rate_for(rates, l.pay_group, site, l.day_type,
+                          l.log_date, l.employee)
+            if r and r.salary_component:
+                frappe.db.set_value("Daily Trip Log", l.name,
+                                    "salary_component", r.salary_component,
+                                    update_modified=False)
+                healed += 1
+            else:
+                unresolved.append("%s %s (%s %s)" % (
+                    l.employee_name, l.log_date, l.pay_group, l.day_type))
+
     logs = _q(
         """select name, employee, employee_name, salary_component,
                   ifnull(quantity,0) qty, ifnull(amount,0) amt
@@ -499,7 +527,8 @@ def generate_payroll_drafts(site, month):
 
     frappe.db.commit()
     return {"created": len(created), "payroll_date": payroll_date,
-            "entries": created, "errors": errors[:10]}
+            "entries": created, "errors": errors[:10],
+            "healed": healed, "unresolved": unresolved[:10]}
 
 
 # ---------------------------------------------------------------------------
@@ -3171,6 +3200,31 @@ def paye_sweep_apply_all(month, employees):
             frappe.db.rollback()
             failed.append({'employee': emp, 'error': str(ex)})
     return {'done': done, 'failed': failed}
+
+
+@frappe.whitelist()
+def refresh_draft_slips(month, site=None):
+    """Rebuild every DRAFT slip for the month so records approved AFTER
+    the slips were drafted (regenerated trips, sweep corrections) flow in.
+    Submitted slips are never touched."""
+    _require_access()
+    m_start, m_end = _month_bounds(month)
+    slips = frappe.get_all('Salary Slip',
+        filters={'start_date': m_start, 'docstatus': 0},
+        fields=['name', 'employee', 'company'])
+    done, failed = 0, []
+    for sl in slips:
+        if site and frappe.db.get_value(
+                'Employee', sl.employee, 'branch') != site:
+            continue
+        try:
+            _rebuild_draft_slip(sl.employee, m_start, m_end, sl.company)
+            frappe.db.commit()
+            done += 1
+        except Exception as ex:
+            frappe.db.rollback()
+            failed.append('%s: %s' % (sl.employee, ex))
+    return {'refreshed': done, 'failed': failed[:10]}
 
 
 @frappe.whitelist()
