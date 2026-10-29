@@ -1,3 +1,11 @@
+## v1.34.1 - 2026-10-29
+
+- FIX: Set / Correct Salary and the prep sheet's Fix button failed with
+  "set_salary is not whitelisted" - in v1.34.0 the new join-month helper
+  was inserted between the whitelist decorator and set_salary, moving the
+  decorator onto the helper. Decorator restored to set_salary; the internal
+  helper is no longer exposed.
+
 ## v1.34.0 - 2026-10-02
 
 Everything September taught us, built in - and the one-off tooling

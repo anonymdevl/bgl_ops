@@ -2855,7 +2855,6 @@ def _weekdays_between(d1, d2):
     return n
 
 
-@frappe.whitelist()
 def _month_one_package(basic, take_home, days, employee=None,
                        on_date=None):
     """Join-month maths (management rule, Oct 2026): the month NETS
@@ -2886,6 +2885,7 @@ def _month_one_package(basic, take_home, days, employee=None,
             'h': h, 't': t, 'e': e}
 
 
+@frappe.whitelist()
 def set_salary(employee, month, basic, take_home, dry_run=0):
     """Guided wizard: set or CORRECT an employee's package from two numbers.
 
