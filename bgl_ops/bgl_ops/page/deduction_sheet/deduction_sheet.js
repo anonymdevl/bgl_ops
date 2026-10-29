@@ -184,7 +184,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		h += signoff_bar('New Hire Pro-Ration') + filter_box('hires');
 		if ((d.new_hires || []).length) {
 			h += '<h4>A. New Hire Pro-Ration - ' + label + '</h4>' +
-				'<p class="sect-note">Found automatically from each joining date. Type the agreed monthly basic AND the agreed take-home; on save this month pays basic x days/22, the full basic becomes the salary assignment, and the allowance split (Housing/Transport/Extra Duty) is worked out and saved automatically from the take-home. Leave take-home empty to handle allowances yourself.</p>' +
+				'<p class="sect-note">Found automatically from each joining date. Type the agreed monthly basic AND the agreed take-home; on save the join month NETS take-home x days/22 (management rule), the full basic becomes the salary assignment, and the month-one component split is worked out and saved automatically. Leave take-home empty to handle allowances yourself.</p>' +
 				'<table class="dds-t" id="dds-hires"><thead><tr>' +
 				'<th class="l">New hire</th><th class="l">Joined</th><th>Days worked</th>' +
 				'<th>Actual monthly basic</th><th>Agreed take-home</th><th>This month pays</th></tr></thead><tbody>';

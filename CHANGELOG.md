@@ -1,3 +1,50 @@
+## v1.34.0 - 2026-10-02
+
+Everything September taught us, built in - and the one-off tooling
+retired now that its job is done:
+
+- RETIRED: the PAYE Correction Sweep (screen and endpoints). It was a
+  one-time migration tool for the September slab change; its durable
+  lessons live on in the permanent tools (live-slab solver math, the
+  board's slip-PAYE audit, No-SSNIT awareness). Historical sweep records
+  and their audit notes remain untouched on the site.
+- NEW UTILITY: the Set/Correct Salary preview warns about suspicious
+  basics (basic equal to the take-home, or odd-cent basics) - the exact
+  onboarding mistakes that caused September's wrong-basic hunt.
+- NEW UTILITY: the preview also compares the typed take-home against
+  what the person's last-month package actually pays under the current
+  tax table, and states the implied RAISE or CUT in cedis and percent -
+  a mistyped figure (the Timothy case) now reads as an explicit raise
+  nobody agreed to, instead of sailing through to rework.
+
+- PRORATION ON TAKE-HOME everywhere (management rule): a join month nets
+  take-home x days/22. The wizard and the prep-sheet hires tab now pick
+  the right slip display automatically - full basic shown when the slice
+  affords it (the William case), else prorated basic with a top-up, else
+  one solved line - and the wizard SEEDS the first full month's package
+  as next-month drafts so nobody re-runs it in month two.
+- NO-SSNIT AWARE MATH: every solver path (sweep, wizard, Fix, preview,
+  hire split) reads the employee's structure; 'No SSNIT' structures are
+  solved without the 5.5% deduction. The ten-person overshoot cannot
+  recur.
+- SMART REFRESH: "Refresh changed slips" rebuilds only drafts whose
+  records (Additional Salary incl. cancellations, assignments, or the
+  tax slab) changed after the slip was built - 3 rebuilt instead of 144.
+  "Rebuild ALL" stays for belt-and-braces runs before submission.
+- CARRY-FORWARD AWARENESS: the allowances prefill no longer rolls
+  system-written ONE-OFF records (join-month prorations, month-one
+  reduced splits - tagged in their notes) into a new month as if they
+  were the standing package. Human-entered and standing-package records
+  carry forward as before, and the per-row x (remove) and loan Close
+  buttons remain the manual way to drop anything.
+- DUPLICATES SOFTENED: several trip-sheet pulls for one component now
+  show as "Paid in parts (normal)" information instead of a duplicates
+  warning; only hand-entered repeats still warn and block approval.
+
+Not in this release: splitting trips/cubic out of the "Overtime" column
+on the payroll summary report - that report lives on the site, not in
+the app; adjust its columns there.
+
 ## v1.33.10 - 2026-10-01
 
 - Refresh draft slips no longer depends on background queue workers

@@ -673,6 +673,10 @@ def deduction_sheet(month):
     # Allowances prefill: last month's submitted uploads per component
     ALLOWANCE_COMPONENTS = ("Housing Allowance", "Transport Allowance",
                             "Extra Duty Allowance", "Overtime Allowance")
+    # One-off records (join-month prorations, month-one reduced splits)
+    # are tagged in their notes and must NOT roll into a new month as if
+    # they were the standing package - only human-entered or standing
+    # package records carry forward.
     prev_allow = _q(
         """select a.employee, a.employee_name, a.salary_component, a.amount
            from `tabAdditional Salary` a
@@ -680,6 +684,9 @@ def deduction_sheet(month):
            where a.docstatus=1 and a.payroll_date=%(d)s
              and a.salary_component in %(comps)s
              and e.status='Active'
+             and ifnull(a.custom_bgl_note,'') not like '%%join month%%'
+             and ifnull(a.custom_bgl_note,'') not like 'Take-home proration%%'
+             and ifnull(a.custom_bgl_note,'') not like 'Proration%%'
            order by a.employee_name""",
         {"d": prev_end, "comps": ALLOWANCE_COMPONENTS})
     allow_drafts = _q(
@@ -1097,16 +1104,28 @@ def deduction_save(month, loans=None, advances=None, absences=None,
             # split automatically (full monthly package, basic fixed, 40/30/30)
             th = flt(row.get("take_home") or 0)
             if th > 0:
-                floor = _slip_math(actual, 0)["net"]
+                floor = _slip_math(actual, 0, m_end, emp)["net"]
                 if th < floor:
                     out["errors"].append(
                         f"New hire {emp}: take-home {flt(th, 2)} is below what "
                         f"the basic alone already pays ({floor}) - not split")
                 else:
-                    pool = _solve_var(th, lambda x: _slip_math(actual, x)["net"])
-                    t_a = round(pool * 0.3, 2)
-                    e_a = round(pool * 0.3, 2)
-                    h_a = round(pool - t_a - e_a, 2)
+                    # Join-month engine (management rule Oct 2026): this
+                    # month nets th x days/22; replace the proration line
+                    # with the engine's basic display + month-one allowances
+                    mo = _month_one_package(actual, th, days, emp, m_end)
+                    if mo:
+                        _upsert_deduction_draft(
+                            emp, "Basic Salary", mo['basic_override'], m_end,
+                            f"Take-home proration {days}/22: month nets "
+                            f"{mo['slice']} ({mo['mode']})", overwrite=1)
+                        h_a, t_a, e_a = mo['h'], mo['t'], mo['e']
+                    else:
+                        pool = _solve_var(
+                            th, lambda x: _slip_math(actual, x, m_end, emp)["net"])
+                        t_a = round(pool * 0.3, 2)
+                        e_a = round(pool * 0.3, 2)
+                        h_a = round(pool - t_a - e_a, 2)
                     for comp, amt in zip(_ALLOW_COMPONENTS, [h_a, t_a, e_a]):
                         act2 = _upsert_deduction_draft(
                             emp, comp, amt, m_end,
@@ -1178,7 +1197,8 @@ def deduction_save(month, loans=None, advances=None, absences=None,
             if key not in row:
                 continue
             amt = flt(row.get(key) or 0)
-            if key == "ota" and desig in PAY_GROUPS and                     GROUP_UNIT.get(desig) in ("Trip", "Cubic"):
+            if key == "ota" and desig in PAY_GROUPS and \
+                    GROUP_UNIT.get(desig) in ("Trip", "Cubic"):
                 if amt > 0:
                     out["errors"].append(
                         f"{emp}: fixed OT blocked - employee earns "
@@ -1688,12 +1708,19 @@ def review_board(month):
            where a.payroll_date between %(ms)s and %(d)s and a.docstatus < 2
              and (e.name is null or e.status != 'Active')""",
         {"ms": f"{month}-01", "d": m_end})
-    dups = _q(
-        """select employee, employee_name, salary_component, count(*) c
+    dup_rows = _q(
+        """select employee, employee_name, salary_component, count(*) c,
+                  sum(case when ifnull(custom_bgl_note,'')
+                      like 'Auto-generated from%%' then 1 else 0 end) auto_c
            from `tabAdditional Salary`
            where payroll_date between %(ms)s and %(d)s and docstatus < 2
            group by employee, salary_component having c > 1""",
         {"ms": f"{month}-01", "d": m_end})
+    # Several trip-sheet pulls for one component are legitimate parts of
+    # one total (September lesson: heal top-ups scared reviewers) - keep
+    # them as information; only hand-entered repeats stay warnings.
+    dups = [d for d in dup_rows if cint(d.auto_c) < cint(d.c)]
+    split_payments = [d for d in dup_rows if cint(d.auto_c) >= cint(d.c)]
 
     total_drafts = sum(g["drafts"] for g in groups.values())
     ready = total_drafts == 0 and not foreign and not dups and \
@@ -1701,6 +1728,7 @@ def review_board(month):
     from bgl_ops import __version__
     return {"month": month, "month_end": m_end, "groups": groups,
             "foreign": foreign, "duplicates": dups,
+            "split_payments": split_payments,
             "total_drafts": total_drafts, "ready": ready,
             "app_version": __version__}
 
@@ -2440,9 +2468,26 @@ def _ot_tax_of(ot_total, basic):
         return round(ot * 0.05, 2)
     return round(half * 0.05 + (ot - half) * 0.10, 2)
 
-def _slip_math(basic, allowances, on_date=None):
+def _is_no_ssnit(employee):
+    """True when the employee's latest salary assignment uses a structure
+    whose name carries 'No SSNIT'. Cached per request. September lesson:
+    the sweep assumed 5.5% SSNIT for everyone and overshot ten people."""
+    if not employee:
+        return False
+    cache = getattr(frappe.local, '_bgl_nossnit', None)
+    if cache is None:
+        cache = frappe.local._bgl_nossnit = {}
+    if employee not in cache:
+        st = frappe.db.get_value('Salary Structure Assignment',
+            {'employee': employee, 'docstatus': 1}, 'salary_structure',
+            order_by='from_date desc')
+        cache[employee] = bool(st and 'No SSNIT' in st)
+    return cache[employee]
+
+
+def _slip_math(basic, allowances, on_date=None, employee=None):
     basic, allowances = _flt(basic), _flt(allowances)
-    ssnit = round(basic * 0.055, 2)
+    ssnit = 0.0 if _is_no_ssnit(employee) else round(basic * 0.055, 2)
     paye = _paye_monthly(basic + allowances - ssnit, on_date)
     gross = round(basic + allowances, 2)
     return {'basic': round(basic, 2), 'allowances': round(allowances, 2),
@@ -2484,7 +2529,7 @@ def solver_preview(employee=None, target=None, solve_for='basic', basic=None,
     h, t, e = _flt(housing), _flt(transport), _flt(eda)
     out = {'solve_for': solve_for}
     if solve_for == 'net':
-        m = _slip_math(basic, h + t + e)
+        m = _slip_math(basic, h + t + e, None, employee)
         m.update({'housing': h, 'transport': t, 'eda': e})
         out.update(m)
         return out
@@ -2495,14 +2540,14 @@ def solver_preview(employee=None, target=None, solve_for='basic', basic=None,
         d = _flt(days)
         if d and d < 22:
             # The slip taxes the PRORATED basic (overwrite ADS), so solve on it.
-            fn = lambda x: _slip_math(round(x * d / 22.0, 2), allow)['net']
+            fn = lambda x: _slip_math(round(x * d / 22.0, 2), allow, None, employee)['net']
         else:
-            fn = lambda x: _slip_math(x, allow)['net']
+            fn = lambda x: _slip_math(x, allow, None, employee)['net']
         b = _solve_var(target, fn)
-        m = _slip_math(b, allow)
+        m = _slip_math(b, allow, None, employee)
         m.update({'housing': h, 'transport': t, 'eda': e})
         if d and d < 22:
-            part = _slip_math(round(b * d / 22.0, 2), allow)['net']
+            part = _slip_math(round(b * d / 22.0, 2), allow, None, employee)['net']
             m['days'] = d
             m['part_month_net'] = part
             m['proration_deduction'] = round(m['net'] - part, 2)
@@ -2514,9 +2559,9 @@ def solver_preview(employee=None, target=None, solve_for='basic', basic=None,
             # The slip taxes the PRORATED basic (overwrite ADS), so solve the
             # allowance pool against the net of (basic*d/22 + allowances).
             pro_b = round(_flt(basic) * d / 22.0, 2)
-            A = _solve_var(target, lambda x: _slip_math(pro_b, x)['net'])
+            A = _solve_var(target, lambda x: _slip_math(pro_b, x, None, employee)['net'])
         else:
-            A = _solve_var(target, lambda x: _slip_math(basic, x)['net'])
+            A = _solve_var(target, lambda x: _slip_math(basic, x, None, employee)['net'])
         try:
             ph, pt, pe_ = [max(0.0, _flt(x)) for x in str(split).split(',')[:3]]
         except Exception:
@@ -2525,10 +2570,10 @@ def solver_preview(employee=None, target=None, solve_for='basic', basic=None,
         t = round(A * pt / tot, 2)
         e = round(A * pe_ / tot, 2)
         h = round(A - t - e, 2)
-        m = _slip_math(basic, A)
+        m = _slip_math(basic, A, None, employee)
         m.update({'housing': h, 'transport': t, 'eda': e})
         if d and d < 22:
-            part = _slip_math(pro_b, A)['net']
+            part = _slip_math(pro_b, A, None, employee)['net']
             m['days'] = d
             m['part_month_net'] = part
             m['proration_deduction'] = round(m['net'] - part, 2)
@@ -2811,6 +2856,36 @@ def _weekdays_between(d1, d2):
 
 
 @frappe.whitelist()
+def _month_one_package(basic, take_home, days, employee=None,
+                       on_date=None):
+    """Join-month maths (management rule, Oct 2026): the month NETS
+    take_home x days/22. Display ladder: show the FULL basic when the
+    slice can afford it (William case); else the prorated basic with a
+    top-up allowance; else one solved gross line."""
+    if days >= 22:
+        return None
+    slice_ = round(_flt(take_home) * days / 22.0, 2)
+    if _slip_math(basic, 0, on_date, employee)['net'] <= slice_ + 0.01:
+        A = _solve_var(slice_,
+                       lambda x: _slip_math(basic, x, on_date, employee)['net'])
+        mode, b_show = 'full basic shown', round(_flt(basic), 2)
+    else:
+        bp = round(_flt(basic) * days / 22.0, 2)
+        if _slip_math(bp, 0, on_date, employee)['net'] <= slice_ + 0.01:
+            A = _solve_var(slice_,
+                           lambda x: _slip_math(bp, x, on_date, employee)['net'])
+            mode, b_show = 'prorated basic + top-up', bp
+        else:
+            b_show = _solve_var(slice_,
+                                lambda x: _slip_math(x, 0, on_date, employee)['net'])
+            A, mode = 0.0, 'single solved line'
+    t = round(A * 0.3, 2)
+    e = round(A * 0.3, 2)
+    h = round(A - t - e, 2)
+    return {'mode': mode, 'slice': slice_, 'basic_override': b_show,
+            'h': h, 't': t, 'e': e}
+
+
 def set_salary(employee, month, basic, take_home, dry_run=0):
     """Guided wizard: set or CORRECT an employee's package from two numbers.
 
@@ -2831,30 +2906,74 @@ def set_salary(employee, month, basic, take_home, dry_run=0):
                      % (emp.employee_name, month))
     if basic <= 0:
         frappe.throw('Enter the agreed basic salary.')
-    floor = _slip_math(basic, 0)['net']
+    floor = _slip_math(basic, 0, m_end, employee)['net']
     if take_home < floor:
         frappe.throw('A basic of GHS {0:,.2f} alone already gives a take-home '
                      'of GHS {1:,.2f} - the agreed take-home must be at least '
                      'that.'.format(basic, floor))
     from_date = max(getdate(m_start), getdate(emp.date_of_joining))
     # Solve the allowance pool (full-month package, 40/30/30)
-    A = _solve_var(take_home, lambda x: _slip_math(basic, x)['net'])
+    A = _solve_var(take_home,
+                   lambda x: _slip_math(basic, x, m_end, employee)['net'])
     t = round(A * 0.3, 2)
     e = round(A * 0.3, 2)
     h = round(A - t - e, 2)
-    # Mid-month proration (weekdays from joining to month end, over 22)
+    # Mid-month proration ON TAKE-HOME (management rule, Oct 2026):
+    # month one nets take_home x days/22; the full package starts the
+    # first full month.
     days = 22
-    pro_amount = None
     if getdate(emp.date_of_joining) > getdate(m_start):
         days = min(22, _weekdays_between(from_date, m_end))
-        if days < 22:
-            pro_amount = round(basic * days / 22.0, 2)
+    mo = _month_one_package(basic, take_home, days, employee, m_end)
+    pro_amount = mo['basic_override'] if mo else None
+    # September lesson: William's 2,500 and Asem's 2,478.85 "basics" were
+    # take-homes or computed figures typed into the basic field at
+    # onboarding. Flag the patterns so they get questioned at entry.
+    warnings = []
+    if abs(basic - take_home) < 0.01:
+        warnings.append('Basic EQUALS take-home - confirm the basic really '
+                        'is the basic, not the full package.')
+    if abs(basic - round(basic)) > 0.001:
+        warnings.append('Basic has odd cents (%s) - agreed basics are '
+                        'usually round figures; was this computed rather '
+                        'than agreed?' % basic)
+    # Timothy lesson (Oct 2026): a mistyped take-home sailed through
+    # because nothing compared it to what the person was ACTUALLY paid.
+    # Derive last month's package and state the implied raise/cut, always.
+    prev_end = add_days(getdate(m_start), -1)
+    prev_start = prev_end.replace(day=1)
+    prev_allow_sum = _flt(frappe.db.sql(
+        """select ifnull(sum(amount),0) from `tabAdditional Salary`
+           where employee=%s and docstatus=1
+             and salary_component in %s
+             and payroll_date between %s and %s""",
+        (employee, _ALLOW_COMPONENTS, str(prev_start), str(prev_end)))[0][0])
+    prev_base = _flt(frappe.db.get_value('Salary Structure Assignment',
+        {'employee': employee, 'docstatus': 1,
+         'from_date': ['<=', str(prev_end)]}, 'base',
+        order_by='from_date desc'))
+    if prev_base > 0 and (prev_allow_sum > 0 or prev_base > 0):
+        prev_pays = _slip_math(prev_base, prev_allow_sum, m_end,
+                               employee)['net']
+        delta = round(take_home - prev_pays, 2)
+        if abs(delta) > 1:
+            warnings.append(
+                'Last month\'s package pays %s under the current tax '
+                'table; you typed %s - a %s of %s (%s%%). Confirm this '
+                'change is genuinely agreed before applying.'
+                % (prev_pays, take_home,
+                   'RAISE' if delta > 0 else 'CUT', abs(delta),
+                   round(abs(delta) * 100.0 / prev_pays, 1)))
     out = {'employee': employee, 'employee_name': emp.employee_name,
            'month': month, 'basic': basic, 'housing': h, 'transport': t,
-           'eda': e, 'full_net': _slip_math(basic, h + t + e)['net'],
+           'eda': e,
+           'full_net': _slip_math(basic, h + t + e, m_end, employee)['net'],
            'days': days, 'proration_amount': pro_amount,
-           'month_cash': _slip_math(pro_amount, h + t + e)['net']
-           if pro_amount is not None else _slip_math(basic, h + t + e)['net'],
+           'month_mode': mo['mode'] if mo else 'full month',
+           'month_allowances': [mo['h'], mo['t'], mo['e']] if mo else [h, t, e],
+           'month_cash': mo['slice'] if mo
+           else _slip_math(basic, h + t + e, m_end, employee)['net'],
+           'warnings': warnings,
            'made': []}
     if dry_run:
         old = frappe.get_all('Salary Structure Assignment',
@@ -2886,8 +3005,11 @@ def set_salary(employee, month, basic, take_home, dry_run=0):
     ssa.insert()
     ssa.submit()
     out['made'].append('SSA %s base %s from %s' % (ssa.name, basic, from_date))
-    # 2) Allowance splits as overwrite ADS (replace drafts and submitted alike)
-    for comp, amt in zip(_ALLOW_COMPONENTS, [h, t, e]):
+    # 2) Allowance splits as overwrite ADS (replace drafts and submitted
+    # alike). In a JOIN month only the month-one amounts are written; the
+    # full package is seeded as next month's drafts further below.
+    month_h, month_t, month_e = (mo['h'], mo['t'], mo['e']) if mo else (h, t, e)
+    for comp, amt in zip(_ALLOW_COMPONENTS, [month_h, month_t, month_e]):
         for row in frappe.get_all('Additional Salary',
                 filters={'employee': employee, 'salary_component': comp,
                          'docstatus': ['<', 2],
@@ -2899,11 +3021,16 @@ def set_salary(employee, month, basic, take_home, dry_run=0):
             else:
                 frappe.delete_doc('Additional Salary', row.name, force=1)
                 out['made'].append('deleted draft ' + row.name)
+        if _flt(amt) <= 0:
+            out['made'].append('%s left empty this month' % comp)
+            continue
         ads = frappe.new_doc('Additional Salary')
         ads.update({'employee': employee, 'salary_component': comp,
                     'amount': amt, 'payroll_date': m_end, 'company': emp.company,
                     'overwrite_salary_structure_amount': 1,
-                    'custom_bgl_note': 'Set by Salary Wizard'})
+                    'custom_bgl_note': 'Set by Salary Wizard'
+                        + (' (join month: nets take-home x %s/22 = %s)'
+                           % (days, out['month_cash']) if mo else '')})
         ads.insert()
         ads.submit()
         out['made'].append('%s %s' % (comp, amt))
@@ -2933,7 +3060,9 @@ def set_salary(employee, month, basic, take_home, dry_run=0):
                     'company': emp.company,
                     'overwrite_salary_structure_amount': 1,
                     'custom_bgl_note':
-                        'Proration %s/22 days (Salary Wizard)' % days})
+                        'Take-home proration %s/22 days: month nets %s, %s '
+                        '(Salary Wizard)' % (days, out['month_cash'],
+                                             mo['mode'] if mo else '')})
         ads.insert()
         if had_submitted:
             ads.submit()
@@ -2941,6 +3070,28 @@ def set_salary(employee, month, basic, take_home, dry_run=0):
                                'cancelled one)' % pro_amount)
         else:
             out['made'].append('proration draft created %s' % pro_amount)
+        # Seed NEXT month's FULL package as drafts so the first full month
+        # pays the real deal without anyone re-running the wizard.
+        ny = int(month[:4]) + (1 if month[5:7] == '12' else 0)
+        nm = 1 if month[5:7] == '12' else int(month[5:7]) + 1
+        next_end = f"{ny:04d}-{nm:02d}-{calendar.monthrange(ny, nm)[1]:02d}"
+        for comp, amt in zip(_ALLOW_COMPONENTS, [h, t, e]):
+            if _flt(amt) <= 0:
+                continue
+            if frappe.db.exists('Additional Salary',
+                    {'employee': employee, 'salary_component': comp,
+                     'docstatus': ['<', 2], 'payroll_date': next_end}):
+                continue
+            nxt = frappe.new_doc('Additional Salary')
+            nxt.update({'employee': employee, 'salary_component': comp,
+                        'amount': amt, 'payroll_date': next_end,
+                        'company': emp.company,
+                        'overwrite_salary_structure_amount': 1,
+                        'custom_bgl_note':
+                            'Full package, first full month (seeded by '
+                            'Salary Wizard with the join-month proration)'})
+            nxt.insert()
+        out['made'].append('full package seeded as %s drafts' % next_end[:7])
     # 4) Rebuild draft slip if the month already has one
     new_net = _rebuild_draft_slip(employee, m_start, m_end, emp.company)
     out['new_net'] = new_net
@@ -3070,210 +3221,6 @@ def settle_loan(loan, action, month=None):
     return {'employee_name': doc.employee_name, 'balance': bal, 'made': made}
 
 
-# ======================================================================
-# v1.33.0 - PAYE revision sweep: when GRA changes the tax bands mid-year,
-# every salary that was reverse-engineered from an agreed take-home lands
-# a few cedis off on the slip. The sweep shows, per draft slip, the net
-# the package USED to produce (old bands) next to what it produces now,
-# and re-solves the allowances so the employee keeps the old figure.
-# ======================================================================
-
-def _swept_already(employee, month, m_start, m_end):
-    if frappe.db.exists('Additional Salary',
-            {'employee': employee, 'docstatus': 1,
-             'payroll_date': ['between', [m_start, m_end]],
-             'custom_bgl_note': ['like', 'PAYE revision sweep%']}):
-        return True
-    return bool(frappe.db.exists('Comment',
-        {'reference_doctype': 'Employee', 'reference_name': employee,
-         'content': ['like', 'PAYE revision sweep %s%%' % month]}))
-
-
-def _sweep_slip_parts(slip_name):
-    """Basic and H/T/E totals out of one slip's earnings rows."""
-    basic, h, t, e = 0.0, 0.0, 0.0, 0.0
-    for r in frappe.get_all('Salary Detail',
-            filters={'parent': slip_name, 'parentfield': 'earnings'},
-            fields=['salary_component', 'amount']):
-        a = _flt(r.amount)
-        if r.salary_component == 'Basic Salary':
-            basic += a
-        elif r.salary_component == 'Housing Allowance':
-            h += a
-        elif r.salary_component == 'Transport Allowance':
-            t += a
-        elif r.salary_component == 'Extra Duty Allowance':
-            e += a
-    return basic, h, t, e
-
-
-def _net_on_bands(basic, allow, bands, top):
-    ssnit = round(_flt(basic) * 0.055, 2)
-    paye = _paye_from_bands(_flt(basic) + _flt(allow) - ssnit, bands, top)
-    return round(_flt(basic) + _flt(allow) - ssnit - paye, 2)
-
-
-@frappe.whitelist()
-def paye_sweep(month):
-    """One row per draft slip whose base net (basic + H/T/E after SSNIT and
-    PAYE; trips, OT and deductions excluded) changed between the old
-    hardcoded bands and the slab now live on the site."""
-    _require_access()
-    m_start, m_end = _month_bounds(month)
-    new_bands, new_top = _active_paye_slabs(m_end)
-    old_bands, old_top = list(_PAYE_SLABS), 0.35
-    if [tuple(x) for x in new_bands] == [tuple(x) for x in old_bands]:
-        return {'rows': [], 'same_slab': 1}
-    slips = frappe.get_all('Salary Slip',
-        filters={'start_date': m_start, 'docstatus': 0},
-        fields=['name', 'employee', 'employee_name'],
-        order_by='employee_name', limit_page_length=0)
-    rows = []
-    for s in slips:
-        basic, h, t, e = _sweep_slip_parts(s.name)
-        if basic <= 0:
-            continue
-        allow = round(h + t + e, 2)
-        old_net = _net_on_bands(basic, allow, old_bands, old_top)
-        new_net = _net_on_bands(basic, allow, new_bands, new_top)
-        delta = round(old_net - new_net, 2)
-        if abs(delta) < 0.01:
-            continue
-        ssa_base = _flt(frappe.db.get_value('Salary Structure Assignment',
-            {'employee': s.employee, 'docstatus': 1,
-             'from_date': ['<=', m_end]}, 'base',
-            order_by='from_date desc'))
-        skip, plan = '', ''
-        sug_basic = sug_allow = None
-        if _swept_already(s.employee, month, m_start, m_end):
-            skip = ('already swept - the base take-home is held at the '
-                    'old figure; applying again would drift it')
-        elif abs(ssa_base - basic) > 0.02:
-            skip = ('part-month or special basic (slip %s vs assignment %s) '
-                    '- use the Fix button instead' % (basic, ssa_base))
-        else:
-            plan, sug_basic, sug_allow = _sweep_plan(
-                basic, h, t, e, old_net, m_end)
-        if skip.startswith('part-month') or skip.startswith('already swept'):
-            # these figures would be reverse-derived from a package that
-            # is prorated or ALREADY re-solved for the new table - either
-            # way phantoms that read like real discrepancies. People saw
-            # "short 6.00" on finished rows and thought nothing happened.
-            old_net = delta = None
-        rows.append({'employee': s.employee,
-                     'employee_name': s.employee_name,
-                     'basic': round(basic, 2), 'allowances': allow,
-                     'old_net': old_net, 'new_net': new_net,
-                     'delta': delta, 'skip': skip, 'plan': plan,
-                     'suggested_basic': sug_basic,
-                     'suggested_allowances': sug_allow})
-    return {'rows': rows, 'same_slab': 0}
-
-
-def _sweep_plan(basic, h0, t0, e0, target, m_end):
-    """How to hold this package at `target` under the live slab, with the
-    exact figures. Allowances are the gentle fix (SSNIT, and therefore the
-    employer's 13%% share, stay put); when they cannot reach - a basic-only
-    package, or a claw-back below the basic floor - the sweep solves the
-    BASIC instead, so no row is ever left without a concrete suggestion."""
-    a0 = round(h0 + t0 + e0, 2)
-    floor = _slip_math(basic, 0, m_end)['net']
-    if a0 > 0 and floor <= target + 0.01:
-        A = _solve_var(target, lambda x: _slip_math(basic, x, m_end)['net'])
-        return 'allowances', None, round(A, 2)
-    B = _solve_var(target, lambda x: _slip_math(x, a0, m_end)['net'])
-    return 'basic', round(B, 2), None
-
-
-@frappe.whitelist()
-def paye_sweep_apply(month, employee, target=None, dry_run=0):
-    """Hold ONE person's base take-home: at the old-band figure derived
-    from their records, or at an explicit management figure typed on the
-    sweep (which also repairs packages that were never solved correctly in
-    the first place). Re-solves under the live slab and rebuilds the
-    draft slip through solver_apply."""
-    _require_access()
-    m_start, m_end = _month_bounds(month)
-    slip = frappe.db.get_value('Salary Slip',
-        {'employee': employee, 'start_date': m_start, 'docstatus': 0}, 'name')
-    if not slip:
-        frappe.throw('No draft slip for this employee in %s.' % month)
-    if _swept_already(employee, month, m_start, m_end):
-        frappe.throw('Already swept this month - applying again would '
-                     'drift the figure.')
-    basic, h0, t0, e0 = _sweep_slip_parts(slip)
-    a0 = round(h0 + t0 + e0, 2)
-    old_bands, old_top = list(_PAYE_SLABS), 0.35
-    derived = _net_on_bands(basic, a0, old_bands, old_top)
-    target = _flt(target) if _flt(target) > 0 else derived
-    edited = abs(target - derived) > 0.01
-
-    ssa_base = _flt(frappe.db.get_value('Salary Structure Assignment',
-        {'employee': employee, 'docstatus': 1, 'from_date': ['<=', m_end]},
-        'base', order_by='from_date desc'))
-    if abs(ssa_base - basic) > 0.02:
-        frappe.throw('Slip basic differs from the salary assignment '
-                     '(part-month?). Use the Fix button for this person.')
-    plan, sug_basic, A = _sweep_plan(basic, h0, t0, e0, target, m_end)
-    if plan == 'allowances':
-        if a0 > 0:
-            h = round(A * h0 / a0, 2)
-            t = round(A * t0 / a0, 2)
-        else:
-            h = round(A * 0.4, 2)
-            t = round(A * 0.3, 2)
-        e = round(A - h - t, 2)
-        use_basic = basic
-        how = 'allowances re-solved'
-    else:
-        use_basic = sug_basic
-        h, t, e = round(h0, 2), round(t0, 2), round(e0, 2)
-        how = 'basic moved %s -> %s' % (round(basic, 2), use_basic)
-    if cint(dry_run):
-        # exactly what the slip will carry - nothing written
-        m = _slip_math(use_basic, h + t + e, m_end)
-        return {'employee': employee,
-                'employee_name': frappe.db.get_value(
-                    'Employee', employee, 'employee_name'),
-                'plan': plan, 'target': target, 'edited': 1 if edited else 0,
-                'basic': m['basic'], 'housing': h, 'transport': t, 'eda': e,
-                'gross': m['gross'], 'ssnit': m['ssnit'], 'paye': m['paye'],
-                'net': m['net'], 'dry_run': 1}
-    res = solver_apply(employee, month, use_basic, h, t, e,
-        note='PAYE revision sweep %s: holding base take-home at %s%s under '
-             'the live tax slab (%s)' % (month, target,
-             ' (management figure, records derived %s)' % derived
-             if edited else '', how))
-    # durable marker: the basic-plan path may write no ADS at all (a
-    # basic-only package), so the drift guard anchors on this comment
-    frappe.get_doc({'doctype': 'Comment', 'comment_type': 'Info',
-        'reference_doctype': 'Employee', 'reference_name': employee,
-        'content': 'PAYE revision sweep %s: held base take-home at %s (%s)'
-                   % (month, target, how)}).insert(ignore_permissions=True)
-    return {'employee': employee, 'target': target, 'plan': plan,
-            'basic': use_basic, 'housing': h, 'transport': t, 'eda': e,
-            'new_net': res.get('new_net')}
-
-
-@frappe.whitelist()
-def paye_sweep_apply_all(month, employees, dry_run=0):
-    _require_access()
-    if isinstance(employees, str):
-        employees = json.loads(employees)
-    done, failed = [], []
-    for item in employees:
-        emp = item.get('employee') if isinstance(item, dict) else item
-        tgt = item.get('target') if isinstance(item, dict) else None
-        try:
-            r = paye_sweep_apply(month, emp, tgt, dry_run)
-            if not cint(dry_run):
-                frappe.db.commit()   # each person stands alone: one failure
-            done.append(r)           # never undoes people already fixed
-        except Exception as ex:
-            if not cint(dry_run):
-                frappe.db.rollback()
-            failed.append({'employee': emp, 'error': str(ex)})
-    return {'done': done, 'failed': failed, 'dry_run': cint(dry_run)}
 
 
 def _refresh_key(month):
@@ -3334,14 +3281,40 @@ def refresh_draft_slips(month, site=None):
 
 
 @frappe.whitelist()
-def refresh_list(month):
+def refresh_list(month, scope='stale'):
     """The draft slips a refresh will rebuild - the page chunks these
-    itself, so nothing depends on background queue workers being alive."""
+    itself, so nothing depends on background queue workers being alive.
+    scope 'stale' (default) returns only slips whose underlying records
+    (Additional Salary incl. cancellations, salary assignments, or the
+    Income Tax Slab) changed AFTER the slip was last built - rebuilding
+    144 identical slips to catch 3 changed ones does not scale. scope
+    'all' keeps the old everything behaviour for belt-and-braces runs."""
     _require_access()
-    m_start, _ = _month_bounds(month)
-    return frappe.get_all('Salary Slip',
+    m_start, m_end = _month_bounds(month)
+    slips = frappe.get_all('Salary Slip',
         filters={'start_date': m_start, 'docstatus': 0},
-        fields=['employee', 'company'], limit_page_length=0)
+        fields=['employee', 'company', 'modified'], limit_page_length=0)
+    total = len(slips)
+    if scope == 'all' or not slips:
+        return {'rows': [{'employee': x.employee} for x in slips],
+                'total': total, 'stale': total, 'scope': 'all'}
+    ads_m = {r.employee: str(r.m) for r in _q(
+        """select employee, max(modified) m from `tabAdditional Salary`
+           where payroll_date between %(f)s and %(t)s
+           group by employee""", {'f': m_start, 't': m_end})}
+    ssa_m = {r.employee: str(r.m) for r in _q(
+        """select employee, max(modified) m
+           from `tabSalary Structure Assignment` group by employee""")}
+    slab_m = str(frappe.db.sql(
+        "select max(modified) from `tabIncome Tax Slab`")[0][0] or '')
+    rows = []
+    for x in slips:
+        marks = [m for m in (ads_m.get(x.employee), ssa_m.get(x.employee),
+                             slab_m) if m]
+        if marks and max(marks) > str(x.modified):
+            rows.append({'employee': x.employee})
+    return {'rows': rows, 'total': total, 'stale': len(rows),
+            'scope': 'stale'}
 
 
 @frappe.whitelist()

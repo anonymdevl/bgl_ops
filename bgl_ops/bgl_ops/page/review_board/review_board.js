@@ -549,6 +549,9 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 		if ((d.duplicates || []).length)
 			h += '<div class="rvb-warn"><b>Duplicates found:</b> ' +
 				d.duplicates.map(function(x) { return x.employee_name + ' / ' + x.salary_component + ' (x' + x.c + ')'; }).join(', ') + '</div>';
+		if ((d.split_payments || []).length)
+			h += '<div class="rvb-warn" style="border-color:var(--border-color);background:var(--fg-color);color:var(--text-muted)"><b>Paid in parts (normal):</b> ' +
+				d.split_payments.map(function(x) { return x.employee_name + ' / ' + x.salary_component + ' (' + x.c + ' trip-sheet pulls, one total)'; }).join(', ') + '</div>';
 
 		// ---- month summary: what adds to pay, what comes off, and the net.
 		// Groups are not all the same sign, so a single grand total would be
@@ -749,7 +752,7 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 					} else {
 						var clean = !(st.anomalies || []).length && st.recon_ok;
 						h += btn('rvb-submit', clean ? 'Submit all salary slips' : 'Submit anyway (I have read the notes above)', clean);
-						h += '<div style="text-align:center;margin-top:-6px"><button id="rvb-refresh" class="btn btn-xs btn-default">Refresh draft slips (pull late approvals)</button></div>';
+						h += '<div style="text-align:center;margin-top:-6px"><button id="rvb-refresh" class="btn btn-xs btn-default">Refresh changed slips (pull late approvals)</button> <button id="rvb-refresh-all" class="btn btn-xs btn-default" title="Rebuild every draft slip regardless of change detection">Rebuild ALL</button></div>';
 					}
 				}
 				if (st.phase === 'submitted') {
@@ -805,15 +808,25 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 				}
 				frappe.confirm('Create the ' + state.month + ' Payroll Entry now? Settings copy from last month; every salary slip is created as a DRAFT for the final check.', function() { start_watch(); go(0); });
 			});
-			box.find('#rvb-refresh').on('click', function() {
+			function run_refresh(scope) {
 				frappe.confirm(
-					'Rebuild every DRAFT slip for ' + state.month + '? Use this after approving something that arrived late - regenerated trip earnings, sweep corrections - so the drafts pick it up. Submitted slips are never touched. Runs in the background with a progress bar.',
+					(scope === 'all'
+						? 'Rebuild EVERY draft slip for ' + state.month + ' regardless of change detection?'
+						: 'Rebuild the draft slips whose records changed since they were last built? (Late approvals, sweep corrections, cancellations - detected automatically.)') +
+					' Submitted slips are never touched.',
 					function() {
 						frappe.call({ method: 'bgl_ops.api.refresh_list',
-							args: { month: state.month },
+							args: { month: state.month, scope: scope },
 							callback: function(r) {
-								var list = r.message || [];
-								if (!list.length) { frappe.msgprint('No draft slips to rebuild.'); return; }
+								var m0 = r.message || {};
+								var list = m0.rows || [];
+								if (!list.length) {
+									frappe.msgprint(scope === 'all' ? 'No draft slips to rebuild.'
+										: 'All ' + (m0.total || 0) + ' draft slips are already up to date - nothing changed since they were built.');
+									return;
+								}
+								if (scope !== 'all')
+									frappe.show_alert({ message: list.length + ' of ' + m0.total + ' slips changed - rebuilding only those.', indicator: 'blue' }, 5);
 								var done = 0, failed = [], i = 0, CH = 6;
 								function step() {
 									if (i >= list.length) {
@@ -845,7 +858,9 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 								step();
 							} });
 					});
-			});
+			}
+			box.find('#rvb-refresh').on('click', function() { run_refresh('stale'); });
+			box.find('#rvb-refresh-all').on('click', function() { run_refresh('all'); });
 			box.find('#rvb-submit').on('click', function() {
 				var clean = !(st.anomalies || []).length && st.recon_ok;
 				frappe.confirm(clean ?
