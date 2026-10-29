@@ -1,3 +1,11 @@
+## v1.34.2 - 2026-10-29
+
+- FIX: the Set / Correct Salary preview no longer shows a false RAISE
+  warning in an employee's first full month. Last month was their join
+  month, paid pro-rata on purpose, so the comparison always looked like a
+  big raise (e.g. Aikins: 1,679.65 -> 4,000 "138%"). The check now skips
+  anyone who joined last month; it still runs for everyone else.
+
 ## v1.34.1 - 2026-10-29
 
 - FIX: Set / Correct Salary and the prep sheet's Fix button failed with

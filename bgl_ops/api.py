@@ -2952,7 +2952,11 @@ def set_salary(employee, month, basic, take_home, dry_run=0):
         {'employee': employee, 'docstatus': 1,
          'from_date': ['<=', str(prev_end)]}, 'base',
         order_by='from_date desc'))
-    if prev_base > 0 and (prev_allow_sum > 0 or prev_base > 0):
+    # A join month was paid pro-rata on purpose, so comparing the first
+    # full month against it always reads as a false RAISE. Skip it.
+    joined_last_month = (prev_start <= getdate(emp.date_of_joining)
+                         <= prev_end)
+    if prev_base > 0 and not joined_last_month:
         prev_pays = _slip_math(prev_base, prev_allow_sum, m_end,
                                employee)['net']
         delta = round(take_home - prev_pays, 2)
