@@ -40,7 +40,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 	// read this, so a column added here appears in all three at once.
 	var SHEETS = [
 		{ pane: 'hires', sel: '#dds-hires', title: 'A. New Hire Pro-Ration', keep_all: 1,
-			cols: ['New hire', 'Joined', 'Days', 'Actual basic', 'This month pays'] },
+			cols: ['New hire', 'Joined', 'Days', 'Agreed take-home', 'Basic', 'This month pays'] },
 		{ pane: 'hires', sel: '#dds-prorate', title: 'A. Existing Staff Pro-Ration',
 			cols: ['Employee', 'Days worked', 'Full salary', 'Deducted', 'This month pays'] },
 		// keep_all: on this tab an empty box means "correct as it stands",
@@ -184,23 +184,27 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		h += signoff_bar('New Hire Pro-Ration') + filter_box('hires');
 		if ((d.new_hires || []).length) {
 			h += '<h4>A. New Hire Pro-Ration - ' + label + '</h4>' +
-				'<p class="sect-note">Found automatically from each joining date. Type the agreed monthly basic AND the agreed take-home; on save the join month NETS take-home x days/22 (management rule), the full basic becomes the salary assignment, and the month-one component split is worked out and saved automatically. Leave take-home empty to handle allowances yourself.</p>' +
+				'<p class="sect-note">Everyone who joined this month is listed automatically. For each one type the two agreed figures - <b>take-home</b> first, then <b>basic</b> - and save. ' +
+				'This month pays take-home &times; days/22; the full basic goes on their salary record; from next month they get the full take-home. ' +
+				'Made a mistake? Type the right figures and save again - it corrects everything.</p>' +
 				'<table class="dds-t" id="dds-hires"><thead><tr>' +
 				'<th class="l">New hire</th><th class="l">Joined</th><th>Days worked</th>' +
-				'<th>Actual monthly basic</th><th>Agreed take-home</th><th>This month pays</th></tr></thead><tbody>';
+				'<th>Agreed take-home</th><th>Basic</th><th>This month pays</th><th class="l">Status</th></tr></thead><tbody>';
 			(d.new_hires || []).forEach(function(nh) {
-				var saved = (d.proration_drafts || []).filter(function(x) { return x.employee === nh.name; });
-				var basic = nh.existing_base || '';
-				h += '<tr data-emp="' + nh.name + '"><td class="l">' + nh.employee_name +
+				var sv = nh.saved || {};
+				var on_record = flt(nh.existing_base) > 0 && !sv.basic
+					? '<div class="text-muted" style="font-size:11px">on record now: ' + fmt(nh.existing_base) + '</div>' : '';
+				h += '<tr data-emp="' + nh.name + '" data-sv-th="' + flt(sv.take_home) + '" data-sv-basic="' + flt(sv.basic) +
+					'" data-sv-days="' + flt(sv.days) + '"><td class="l">' + nh.employee_name +
 					' <span class="text-muted">' + (nh.designation || '') + '</span></td>' +
 					'<td class="l">' + frappe.datetime.str_to_user(nh.date_of_joining) + '</td>' +
-					'<td><input type="number" min="0" max="22" step="0.5" class="nh-days" value="' + nh.days_suggested + '"></td>' +
-					'<td><input type="number" min="0" step="0.01" class="nh-basic" value="' + basic + '" placeholder="type basic"></td>' +
-					'<td><input type="number" min="0" step="0.01" class="nh-th" placeholder="package (optional)"></td>' +
-					'<td class="nh-pay">' + (saved.length ? fmt(saved[0].amount) + ' (saved)' : '-') + '</td></tr>';
+					'<td><input type="number" min="0" max="22" step="0.5" class="nh-days" value="' + (sv.days || nh.days_suggested) + '"></td>' +
+					'<td><input type="number" min="0" step="0.01" class="nh-th" value="' + (sv.take_home || '') + '" placeholder="take-home"></td>' +
+					'<td><input type="number" min="0" step="0.01" class="nh-basic" value="' + (sv.basic || '') + '" placeholder="basic">' + on_record + '</td>' +
+					'<td class="nh-pay">-</td><td class="l nh-status"></td></tr>';
 			});
 			h += '<tr class="total"><td class="l">TOTAL PRO-RATION</td><td></td>' +
-				'<td id="tot-nh-days"></td><td id="tot-nh-basic"></td><td></td><td id="tot-nh"></td></tr>';
+				'<td id="tot-nh-days"></td><td id="tot-nh-th"></td><td id="tot-nh-basic"></td><td id="tot-nh"></td><td></td></tr>';
 			h += '</tbody></table>';
 		}
 		if (!(d.new_hires || []).length) h += '<p class="sect-note">No joiners this month - nothing to prorate.</p>';
@@ -352,7 +356,11 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			var e2 = (d.employees || []).filter(function(e) { return e.name === a.employee; });
 			aset(arow(a.employee, e2.length ? e2[0].employee_name : a.employee), a.salary_component, a.amount);
 		});
-		Object.keys(amap).forEach(function(emp) { h += allow_row(emp, amap[emp], (d.ot_locked || {})[emp]); });
+		var hire_set = {};
+		(d.new_hires || []).forEach(function(nh) { if (nh.saved) hire_set[nh.name] = 1; });
+		Object.keys(amap).forEach(function(emp) {
+			h += hire_set[emp] ? hire_allow_row(emp, amap[emp]) : allow_row(emp, amap[emp], (d.ot_locked || {})[emp]);
+		});
 		h += '<tr class="total"><td class="l">TOTAL ALLOWANCES</td><td id="tot-ah"></td><td id="tot-at"></td><td id="tot-ae"></td><td id="tot-ao"></td><td id="tot-aa"></td></tr>';
 		h += '</tbody></table>' +
 			'<button class="btn btn-xs btn-default dds-add" id="add-allow">+ Add employee</button>';
@@ -449,12 +457,9 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 				} });
 		});
 		holder.find('input').on('input', function() { $(this).addClass('dirty'); totals(); });
-		holder.find('#dds-basics tbody tr[data-emp] input.bs-new, #dds-hires tbody tr[data-emp] input.nh-basic')
+		holder.find('#dds-basics tbody tr[data-emp] input.bs-new')
 			.after(' <button class="btn btn-xs btn-default dds-solve" title="Solve this basic from an agreed take-home">&#402;x</button>');
 		holder.find('.dds-solve').on('click', function() { open_solver($(this)); });
-		holder.find('#dds-hires tbody tr[data-emp] input.nh-th')
-			.after(' <button class="btn btn-xs btn-default dds-fixrec" title="Records already wrong? Replace the salary assignment, allowances and pro-ration from these two numbers">Fix</button>');
-		holder.find('.dds-fixrec').on('click', function() { fix_records($(this)); });
 		holder.find('.dds-settle').on('click', function() { settle_loan_row($(this)); });
 		holder.find('#add-loan').on('click', add_loan);
 		holder.find('#add-adv').on('click', function() { add_person('adv'); });
@@ -480,6 +485,17 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			cell('al-h', r.housing) + cell('al-t', r.transport) + cell('al-e', r.eda) +
 			(locked ? '<td class="text-muted" style="text-align:center">Trips/Cubic - locked</td>' : cell('al-o', r.ota)) +
 			'<td class="al-tot">-</td></tr>';
+	}
+
+	// A joiner's allowances this month come from their two figures on the
+	// Pro-Ration tab. Shown here for the totals, but changed over there.
+	function hire_allow_row(emp, r) {
+		function cell(v) { return '<td class="text-muted">' + fmt(v) + '</td>'; }
+		var v = [flt(r.housing), flt(r.transport), flt(r.eda), flt(r.ota)];
+		return '<tr data-emp="' + emp + '" data-hire="1" data-v="' + JSON.stringify(v) + '"><td class="l">' + r.name +
+			' <span class="text-muted" style="font-size:11px">(new hire - set on the Pro-Ration tab)</span></td>' +
+			cell(r.housing) + cell(r.transport) + cell(r.eda) + cell(r.ota) +
+			'<td class="al-tot">' + fmt(r.housing + r.transport + r.eda + r.ota) + '</td></tr>';
 	}
 
 	function rm_cell() {
@@ -576,15 +592,30 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		});
 		holder.find('#tot-abs-days').text(td + ' days');
 		holder.find('#tot-abs').text('GHS ' + fmt(tabs));
-		var tnhd = 0, tnhb = 0, tnhp = 0;
+		// This month pays = take-home x days/22 (management rule) - the
+		// same figure the save writes, so what you see is what gets paid.
+		var tnhd = 0, tnht = 0, tnhb = 0, tnhp = 0;
 		holder.find('#dds-hires tbody tr[data-emp]').each(function() {
-			var days = flt($(this).find('input.nh-days').val());
-			var basic = flt($(this).find('input.nh-basic').val());
-			var pay = basic > 0 ? basic * Math.min(days, 22) / 22 : 0;
-			tnhd += days; tnhb += basic; tnhp += pay;
-			$(this).find('td.nh-pay').text(basic > 0 ? fmt(pay) : '-');
+			var tr = $(this);
+			var days = flt(tr.find('input.nh-days').val());
+			var th = flt(tr.find('input.nh-th').val());
+			var basic = flt(tr.find('input.nh-basic').val());
+			var ok = th > 0 && basic > 0 && basic < th && days > 0;
+			var pay = ok ? Math.round(th * Math.min(days, 22) / 22 * 100) / 100 : 0;
+			tnhd += days; tnht += th; tnhb += basic; tnhp += pay;
+			tr.find('td.nh-pay').text(ok ? fmt(pay) : '-');
+			var st, col;
+			if (!th && !basic) { st = 'type take-home and basic'; col = 'var(--text-muted)'; }
+			else if (!th || !basic) { st = 'type BOTH figures'; col = 'var(--orange-600)'; }
+			else if (basic >= th) { st = 'looks swapped - take-home is the bigger figure'; col = 'var(--red-600)'; }
+			else if (!days) { st = 'type the days worked'; col = 'var(--orange-600)'; }
+			else if (Math.abs(th - flt(tr.data('sv-th'))) < 0.005 && Math.abs(basic - flt(tr.data('sv-basic'))) < 0.005 &&
+				Math.abs(Math.min(days, 22) - flt(tr.data('sv-days'))) < 0.005) { st = '&#10003; saved'; col = 'var(--green-600)'; }
+			else { st = 'not saved yet'; col = 'var(--orange-600)'; }
+			tr.find('td.nh-status').html('<span style="color:' + col + ';font-weight:600">' + st + '</span>');
 		});
 		holder.find('#tot-nh-days').text(tnhd ? tnhd + ' days' : '');
+		holder.find('#tot-nh-th').text(tnht ? fmt(tnht) : '');
 		holder.find('#tot-nh-basic').text(tnhb ? fmt(tnhb) : '');
 		holder.find('#tot-nh').text(tnhp ? 'GHS ' + fmt(tnhp) : '');
 		// basic salaries: what payroll will use now, and what a correction moves it to
@@ -613,6 +644,11 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 
 		var th = 0, tt = 0, te = 0, to2 = 0, taa = 0;
 		holder.find('#dds-allow tbody tr[data-emp]').each(function() {
+			if ($(this).data('hire')) {
+				var hv = $(this).data('v') || [0, 0, 0, 0];
+				th += hv[0]; tt += hv[1]; te += hv[2]; to2 += hv[3]; taa += hv[0] + hv[1] + hv[2] + hv[3];
+				return;
+			}
 			var vh = flt($(this).find('input.al-h').val()), vt = flt($(this).find('input.al-t').val());
 			var ve = flt($(this).find('input.al-e').val()), vo = flt($(this).find('input.al-o').val());
 			th += vh; tt += vt; te += ve; to2 += vo;
@@ -643,6 +679,9 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 				days: flt($(this).find('input.nh-days').val()) });
 		});
 		holder.find('#dds-allow tbody tr[data-emp]').each(function() {
+			// joiners are saved from the Pro-Ration tab; sending these
+			// read-only rows back as zeros would wipe their allowances
+			if ($(this).data('hire')) return;
 			var r = { employee: $(this).data('emp'),
 				housing: flt($(this).find('input.al-h').val()),
 				transport: flt($(this).find('input.al-t').val()),
@@ -820,43 +859,6 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		var w = window.open('', '_blank');
 		w.document.write(h); w.document.close();
 		setTimeout(function() { w.print(); }, 400);
-	}
-
-	function fix_records($btn) {
-		var tr = $btn.closest('tr'), emp = tr.data('emp');
-		var name = tr.find('td').first().text().trim();
-		var basic = flt(tr.find('input.nh-basic').val());
-		var th = flt(tr.find('input.nh-th').val());
-		if (!basic || !th) {
-			frappe.msgprint('Type the agreed basic AND take-home in this row first - Fix uses those two numbers.');
-			return;
-		}
-		frappe.call({ method: 'bgl_ops.api.set_salary',
-			args: { employee: emp, month: state.month, basic: basic, take_home: th, dry_run: 1 },
-			freeze: true,
-			callback: function(r) {
-				var m = r.message;
-				var fmt2 = function(x) { return format_number(x, null, 2); };
-				var msg = '<b>' + m.employee_name + '</b>: basic ' + fmt2(m.basic) +
-					', allowances ' + fmt2(m.housing) + ' / ' + fmt2(m.transport) + ' / ' + fmt2(m.eda) +
-					' &rarr; take-home <b>' + fmt2(m.full_net) + '</b>.' +
-					(m.proration_amount != null
-						? '<br>This month: ' + m.days + ' of 22 days, basic prorated to ' + fmt2(m.proration_amount) + '.'
-						: '') +
-					((m.will_replace_ssa || []).length
-						? '<br><span style="color:#b7791f">Replaces wrong assignment: ' +
-							m.will_replace_ssa.map(function(x) { return 'base ' + fmt2(x.base) + ' from ' + x.from_date; }).join(', ') + '</span>'
-						: '');
-				frappe.confirm(msg, function() {
-					frappe.call({ method: 'bgl_ops.api.set_salary',
-						args: { employee: emp, month: state.month, basic: basic, take_home: th, dry_run: 0 },
-						freeze: true, freeze_message: 'Fixing ' + name + '...',
-						callback: function() {
-							frappe.show_alert({ message: name + ' fixed - reloading the sheet.', indicator: 'green' }, 6);
-							load();
-						} });
-				});
-			} });
 	}
 
 	function settle_loan_row($btn) {

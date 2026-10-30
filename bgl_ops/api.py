@@ -656,7 +656,7 @@ def deduction_sheet(month):
            order by date_of_joining""",
         {"f": f"{month}-01", "t": m_end})
     base_map = {b.employee: flt(b.base) for b in bases}
-    year, mon = int(month[:4]), int(month[5:7])
+    saved_nh = _join_figures(month)
     for h in new_hires:
         doj = getdate(h.date_of_joining)
         # suggested worked days: weekdays from joining to month end, cap 22
@@ -669,6 +669,8 @@ def deduction_sheet(month):
             d = add_days(d, 1)
         h["days_suggested"] = min(wd, 22)
         h["existing_base"] = base_map.get(h.name, 0)
+        # what was saved for this joiner, shown again exactly as typed
+        h["saved"] = saved_nh.get(h.name)
 
     # Allowances prefill: last month's submitted uploads per component
     ALLOWANCE_COMPONENTS = ("Housing Allowance", "Transport Allowance",
@@ -1037,106 +1039,47 @@ def deduction_save(month, loans=None, advances=None, absences=None,
         except Exception as ex:
             out["errors"].append(f"Proration {row.get('employee')}: {ex}")
 
-    # ---- New hire proration: Basic Salary override + next-month SSA ----
-    if mon == 12:
-        nxt_start = f"{year + 1}-01-01"
-    else:
-        nxt_start = f"{year}-{mon + 1:02d}-01"
+    # ---- New hires: the two agreed figures drive everything ----
+    # Sarah's sheet gives each joiner an agreed TAKE-HOME and BASIC. Every
+    # save re-applies both (salary assignment, the month's lines, next
+    # month's package), so a wrong first save is corrected by typing the
+    # right figures and saving again. Before v1.35 the first save locked
+    # the assignment in and the take-home box came back empty on reload -
+    # October's 15 joiners all ended up with their take-home as basic.
+    hires_done = set()
     for row in new_hires:
+        emp = row.get("employee")
+        basic = flt(row.get("actual_basic") or 0)
+        th = flt(row.get("take_home") or 0)
+        days = min(flt(row.get("days") or 0), 22)
+        if basic <= 0 and th <= 0:
+            continue
+        nm = frappe.db.get_value("Employee", emp, "employee_name") or emp
+        if th <= 0 or basic <= 0:
+            out["errors"].append(
+                f"{nm}: type BOTH the agreed take-home and the basic - "
+                "not saved")
+            continue
+        if basic >= th:
+            out["errors"].append(
+                f"{nm}: basic {flt(basic, 2)} is not below take-home "
+                f"{flt(th, 2)} - the two look swapped (take-home is the "
+                "bigger figure). Not saved.")
+            continue
+        if days <= 0:
+            out["errors"].append(f"{nm}: days worked is empty - not saved")
+            continue
         try:
-            emp = row.get("employee")
-            actual = flt(row.get("actual_basic") or 0)
-            days = flt(row.get("days") or 0)
-            if actual <= 0:
-                continue
-            prorated = flt(actual * min(days, 22) / 22.0, 2)
-            # ORDER MATTERS. An Additional Salary cannot be created for an
-            # employee with no Salary Structure Assignment, so the SSA has to
-            # exist FIRST. Doing the proration override first (as this did
-            # before v1.13.1) threw "There is no Salary Structure assigned"
-            # and aborted the row before the SSA was ever written - the
-            # Pro-Ration tab could never handle a genuinely new hire.
-            #
-            # SSA carries the FULL basic from the JOINING DATE; the proration
-            # override below trims month one to days/22. Every later month
-            # then pays full automatically. Dating the SSA next month would
-            # leave THIS month with no assignment and the joiner would be
-            # skipped by Payroll Entry entirely.
-            has_ssa = frappe.db.exists(
-                "Salary Structure Assignment",
-                {"employee": emp, "docstatus": 1})
-            if not has_ssa:
-                tmpl = _q(
-                    """select salary_structure, income_tax_slab, company,
-                              currency, payroll_payable_account
-                       from `tabSalary Structure Assignment`
-                       where docstatus=1 order by creation desc limit 1""")
-                t = tmpl[0] if tmpl else {}
-                ssa = frappe.get_doc({
-                    "doctype": "Salary Structure Assignment",
-                    "employee": emp,
-                    "salary_structure": t.get("salary_structure")
-                        or "Main Structure - BGL",
-                    "income_tax_slab": t.get("income_tax_slab"),
-                    "company": t.get("company")
-                        or frappe.db.get_value("Employee", emp, "company"),
-                    "currency": t.get("currency") or "GHS",
-                    "payroll_payable_account": t.get("payroll_payable_account"),
-                    "from_date": frappe.db.get_value(
-                        "Employee", emp, "date_of_joining") or nxt_start,
-                    "base": actual,
-                })
-                ssa.insert()
-                ssa.submit()
-                out["ssa_created"].append(
-                    f"{frappe.db.get_value('Employee', emp, 'employee_name')}"
-                    f" (base {flt(actual, 2)} from {ssa.from_date})")
-            act = _upsert_deduction_draft(
-                emp, "Basic Salary", prorated, m_end,
-                f"New Hire Proration - {month_label}: joined "
-                f"{frappe.db.get_value('Employee', emp, 'date_of_joining')}, "
-                f"{days}/22 days x actual basic {flt(actual, 2)}",
-                overwrite=1)
-            note_skip(act, emp, "new hire pro-ration")
-            if act in ("created", "updated"):
+            frappe.db.savepoint("bgl_nh")
+            if _apply_join_month(emp, month, basic, th, days):
                 out["new_hires"] += 1
-            # Agreed take-home typed on the hires tab: solve the allowance
-            # split automatically (full monthly package, basic fixed, 40/30/30)
-            th = flt(row.get("take_home") or 0)
-            if th > 0:
-                floor = _slip_math(actual, 0, m_end, emp)["net"]
-                if th < floor:
-                    out["errors"].append(
-                        f"New hire {emp}: take-home {flt(th, 2)} is below what "
-                        f"the basic alone already pays ({floor}) - not split")
-                else:
-                    # Join-month engine (management rule Oct 2026): this
-                    # month nets th x days/22; replace the proration line
-                    # with the engine's basic display + month-one allowances
-                    mo = _month_one_package(actual, th, days, emp, m_end)
-                    if mo:
-                        _upsert_deduction_draft(
-                            emp, "Basic Salary", mo['basic_override'], m_end,
-                            f"Take-home proration {days}/22: month nets "
-                            f"{mo['slice']} ({mo['mode']})", overwrite=1)
-                        h_a, t_a, e_a = mo['h'], mo['t'], mo['e']
-                    else:
-                        pool = _solve_var(
-                            th, lambda x: _slip_math(actual, x, m_end, emp)["net"])
-                        t_a = round(pool * 0.3, 2)
-                        e_a = round(pool * 0.3, 2)
-                        h_a = round(pool - t_a - e_a, 2)
-                    for comp, amt in zip(_ALLOW_COMPONENTS, [h_a, t_a, e_a]):
-                        act2 = _upsert_deduction_draft(
-                            emp, comp, amt, m_end,
-                            f"Auto allowance split {month_label}: take-home "
-                            f"{flt(th, 2)} with basic {flt(actual, 2)}",
-                            overwrite=1)
-                        note_skip(act2, emp, comp)
-                        if act2 in ("created", "updated"):
-                            out["allowances"] += 1
+            hires_done.add(emp)
         except Exception as ex:
-            out["errors"].append(f"New hire {row.get('employee')}: {ex}")
+            try:
+                frappe.db.rollback(save_point="bgl_nh")
+            except Exception:
+                pass
+            out["errors"].append(f"New hire {nm}: {ex}")
 
     # ---- Basic salary corrections: NEW SSA effective 1st of this month ----
     m_start = f"{month}-01"
@@ -1192,6 +1135,11 @@ def deduction_save(month, loans=None, advances=None, absences=None,
                  "eda": "Extra Duty Allowance", "ota": "Overtime Allowance"}
     for row in allowances:
         emp = row.get("employee")
+        # The Pro-Ration tab owns a joiner's allowances this month. This
+        # loop runs after it in the same save and still holds the figures
+        # the page loaded, so letting it through would put them back.
+        if emp in hires_done:
+            continue
         desig = frappe.db.get_value("Employee", emp, "designation")
         for key, comp in ALLOW_MAP.items():
             if key not in row:
@@ -2885,6 +2833,169 @@ def _month_one_package(basic, take_home, days, employee=None,
             'h': h, 't': t, 'e': e}
 
 
+def _nh_key(month, employee):
+    return f"bgl_nh::{month}::{employee}"
+
+
+def _remember_join_figures(month, employee, basic, take_home, days,
+                           month_pays):
+    """Keep the two agreed figures so the Pro-Ration tab shows them again
+    on reload, exactly as typed."""
+    frappe.db.set_default(_nh_key(month, employee), json.dumps({
+        "basic": flt(basic, 2), "take_home": flt(take_home, 2),
+        "days": flt(days), "month_pays": flt(month_pays, 2)}))
+
+
+def _join_figures(month):
+    """{employee: {basic, take_home, days, month_pays}} saved for a month."""
+    out = {}
+    for r in _q("""select defkey, defvalue from `tabDefaultValue`
+                   where parent='__default' and defkey like %(k)s""",
+                {"k": f"bgl_nh::{month}::%"}):
+        try:
+            out[r.defkey.split("::")[-1]] = json.loads(r.defvalue)
+        except Exception:
+            pass
+    return out
+
+
+def _put_month_record(employee, component, amount, pay_date, note):
+    """Leave exactly one overwrite record of `component` on `pay_date`
+    reading `amount` (none when 0). An approved record is replaced by an
+    approved one, so re-saving after approval never drops a line from
+    the slip. Returns True when anything changed."""
+    amount = flt(amount, 2)
+    rows = frappe.get_all("Additional Salary",
+        filters={"employee": employee, "salary_component": component,
+                 "payroll_date": pay_date, "docstatus": ["<", 2]},
+        fields=["name", "docstatus", "amount", "custom_bgl_note",
+                "overwrite_salary_structure_amount"])
+    if (amount > 0 and len(rows) == 1
+            and abs(flt(rows[0].amount) - amount) < 0.005
+            and cint(rows[0].overwrite_salary_structure_amount)):
+        if (rows[0].custom_bgl_note or "") != note:
+            # the note decides carry-forward, so keep it current
+            frappe.db.set_value("Additional Salary", rows[0].name,
+                                "custom_bgl_note", note)
+        return False
+    approved = any(r.docstatus == 1 for r in rows)
+    for r in rows:
+        if r.docstatus == 1:
+            frappe.get_doc("Additional Salary", r.name).cancel()
+        else:
+            frappe.delete_doc("Additional Salary", r.name, force=1)
+    if amount <= 0:
+        return bool(rows)
+    doc = frappe.get_doc({
+        "doctype": "Additional Salary", "employee": employee,
+        "company": frappe.db.get_value("Employee", employee, "company"),
+        "salary_component": component, "amount": amount,
+        "payroll_date": pay_date, "overwrite_salary_structure_amount": 1,
+        "custom_bgl_note": note})
+    doc.insert()
+    if approved:
+        doc.submit()
+    return True
+
+
+def _apply_join_month(employee, month, basic, take_home, days):
+    """A joiner's two agreed figures -> every record their pay needs:
+    the salary assignment (full basic from the joining date), this
+    month's lines (nets take-home x days/22), next month's full package,
+    and a rebuilt draft slip. Safe to repeat: unchanged figures change
+    nothing. Returns True when anything changed."""
+    m_start, m_end = _month_bounds(month)
+    emp = frappe.get_doc("Employee", employee)
+    if frappe.db.exists("Salary Slip", {"employee": employee,
+                                        "start_date": m_start,
+                                        "docstatus": 1}):
+        frappe.throw("already has a SUBMITTED salary slip for this month - "
+                     "paid history is never edited")
+    from_date = max(getdate(m_start), getdate(emp.date_of_joining))
+    changed = False
+
+    # 1) Salary assignment: the FULL basic from the joining date
+    cur = frappe.get_all("Salary Structure Assignment",
+        filters={"employee": employee, "docstatus": 1,
+                 "from_date": ["<=", m_end]},
+        fields=["base"], order_by="from_date desc", limit=1)
+    later = frappe.get_all("Salary Structure Assignment",
+        filters={"employee": employee, "docstatus": 1,
+                 "from_date": [">", m_end], "base": ["!=", basic]},
+        pluck="name")
+    if not cur or abs(flt(cur[0].base) - basic) >= 0.005 or later:
+        tpl = (frappe.get_all("Salary Structure Assignment",
+                   filters={"employee": employee, "docstatus": 1},
+                   fields=["salary_structure", "income_tax_slab",
+                           "payroll_payable_account", "company", "currency"],
+                   order_by="from_date desc", limit=1)
+               or frappe.get_all("Salary Structure Assignment",
+                   filters={"docstatus": 1},
+                   fields=["salary_structure", "income_tax_slab",
+                           "payroll_payable_account", "company", "currency"],
+                   order_by="creation desc", limit=1))
+        t = tpl[0] if tpl else frappe._dict()
+        for old in frappe.get_all("Salary Structure Assignment",
+                filters={"employee": employee, "docstatus": 1,
+                         "from_date": [">=", str(from_date)]}, pluck="name"):
+            frappe.get_doc("Salary Structure Assignment", old).cancel()
+        ssa = frappe.get_doc({
+            "doctype": "Salary Structure Assignment", "employee": employee,
+            "salary_structure": t.get("salary_structure")
+                or "Main Structure - BGL",
+            "income_tax_slab": t.get("income_tax_slab"),
+            "payroll_payable_account": t.get("payroll_payable_account"),
+            "company": t.get("company") or emp.company,
+            "currency": t.get("currency") or "GHS",
+            "from_date": str(from_date), "base": basic})
+        ssa.insert()
+        ssa.submit()
+        changed = True
+
+    # 2) This month. Full month: the full package, no basic line (the
+    # assignment pays the basic). Part month: the join-month ladder.
+    A = _solve_var(take_home,
+                   lambda x: _slip_math(basic, x, m_end, employee)["net"])
+    t_f = round(A * 0.3, 2)
+    e_f = round(A * 0.3, 2)
+    h_f = round(A - t_f - e_f, 2)
+    mo = _month_one_package(basic, take_home, days, employee, m_end)
+    if mo:
+        pays = mo["slice"]
+        # "join month" keeps these out of next month's carry-forward
+        note = (f"Pro-Ration tab, join month {month}: nets take-home "
+                f"{flt(take_home, 2)} x {days}/22 = {pays} "
+                f"(basic {flt(basic, 2)}, {mo['mode']})")
+        basic_line, month_allow = mo["basic_override"], [mo["h"], mo["t"], mo["e"]]
+    else:
+        pays = flt(take_home, 2)
+        note = (f"Full package {month} from the Pro-Ration tab: take-home "
+                f"{flt(take_home, 2)} with basic {flt(basic, 2)}")
+        basic_line, month_allow = 0, [h_f, t_f, e_f]
+    changed |= _put_month_record(employee, "Basic Salary", basic_line,
+                                 m_end, note)
+    for comp, amt in zip(_ALLOW_COMPONENTS, month_allow):
+        changed |= _put_month_record(employee, comp, amt, m_end, note)
+
+    # 3) Next month: the full package as drafts, so the first full month
+    # pays the agreed take-home with nobody re-entering it
+    if mo:
+        ny = int(month[:4]) + (1 if month[5:7] == "12" else 0)
+        nm = 1 if month[5:7] == "12" else int(month[5:7]) + 1
+        next_end = _month_end(f"{ny:04d}-{nm:02d}")
+        for comp, amt in zip(_ALLOW_COMPONENTS, [h_f, t_f, e_f]):
+            _upsert_deduction_draft(
+                employee, comp, amt, next_end,
+                f"Full package, first full month (seeded by the Pro-Ration "
+                f"tab, {month}): take-home {flt(take_home, 2)} with basic "
+                f"{flt(basic, 2)}", overwrite=1)
+
+    _remember_join_figures(month, employee, basic, take_home, days, pays)
+    if changed:
+        _rebuild_draft_slip(employee, m_start, m_end, emp.company)
+    return changed
+
+
 @frappe.whitelist()
 def set_salary(employee, month, basic, take_home, dry_run=0):
     """Guided wizard: set or CORRECT an employee's package from two numbers.
@@ -2985,6 +3096,15 @@ def set_salary(employee, month, basic, take_home, dry_run=0):
                      'from_date': ['>=', str(from_date)]},
             fields=['name', 'base', 'from_date'])
         out['will_replace_ssa'] = old
+        if pro_amount is None:
+            out['will_remove_basic_line'] = [r.name for r in
+                frappe.get_all('Additional Salary',
+                    filters={'employee': employee,
+                             'salary_component': 'Basic Salary',
+                             'overwrite_salary_structure_amount': 1,
+                             'docstatus': ['<', 2],
+                             'payroll_date': ['between', [m_start, m_end]]},
+                    fields=['name'])]
         return out
     # 1) Replace any submitted SSA from this month forward (wrong ones included)
     tpl = frappe.get_all('Salary Structure Assignment',
@@ -3096,6 +3216,29 @@ def set_salary(employee, month, basic, take_home, dry_run=0):
                             'Salary Wizard with the join-month proration)'})
             nxt.insert()
         out['made'].append('full package seeded as %s drafts' % next_end[:7])
+    else:
+        # A full month pays the basic from the assignment. A Basic Salary
+        # line left over from an earlier wrong save would override it -
+        # before v1.35 Fix would have kept Bismark's 2,300 line on top of the
+        # new 1,100 basic and its allowances.
+        for row in frappe.get_all('Additional Salary',
+                filters={'employee': employee,
+                         'salary_component': 'Basic Salary',
+                         'overwrite_salary_structure_amount': 1,
+                         'docstatus': ['<', 2],
+                         'payroll_date': ['between', [m_start, m_end]]},
+                fields=['name', 'docstatus']):
+            if row.docstatus == 1:
+                frappe.get_doc('Additional Salary', row.name).cancel()
+                out['made'].append('cancelled old basic line %s' % row.name)
+            else:
+                frappe.delete_doc('Additional Salary', row.name, force=1)
+                out['made'].append('removed old basic line %s' % row.name)
+    # Joiner: keep the Pro-Ration tab showing what was set here, so the
+    # two screens never disagree and a later tab save cannot undo this
+    if getdate(m_start) <= getdate(emp.date_of_joining) <= getdate(m_end):
+        _remember_join_figures(month, employee, basic, take_home, days,
+                               out['month_cash'])
     # 4) Rebuild draft slip if the month already has one
     new_net = _rebuild_draft_slip(employee, m_start, m_end, emp.company)
     out['new_net'] = new_net

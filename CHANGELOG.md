@@ -1,3 +1,44 @@
+## v1.35.0 - 2026-10-30
+
+The New Hire Pro-Ration tab, rebuilt around the two figures HR actually
+has for every joiner - the agreed take-home and the agreed basic. October
+showed the old tab was easy to get wrong and impossible to put right: all
+15 joiners ended up with their take-home saved as their basic.
+
+- FIX: the take-home box now keeps what was saved. Before, it came back
+  empty on every reload while the basic box refilled, so a saved row
+  looked like "basic only".
+- FIX: re-saving now CORRECTS a joiner. Before, the first save created
+  the salary assignment and every later save left it alone, so a wrong
+  basic could never be fixed from the tab (and Samed Abdul / Peace
+  Dorfenyo, who had an old 0 assignment, never got a real one). Now the
+  assignment, this month's lines and next month's package all follow the
+  figures on every save; unchanged figures change nothing. Approved
+  records are replaced by approved ones; a submitted slip is never touched.
+- FIX: "This month pays" shows the real figure, take-home x days/22. It
+  used to show basic x days/22, ignoring the take-home.
+- FIX: Set / Correct Salary (the wizard) left an old Basic Salary line in
+  place for full-month people, which would have overpaid anyone who
+  joined on the 1st. It now removes it; the preview lists it under
+  will_remove_basic_line. The wizard also updates the Pro-Ration tab's
+  saved figures for a joiner, so the two screens never disagree.
+- FIX: the Allowances tab no longer undoes a joiner's allowances. It
+  saves after the Pro-Ration tab in the same click and was sending back
+  the figures the page had loaded. Joiners now show there read-only
+  ("set on the Pro-Ration tab").
+- CHANGED: column order is take-home, then basic - the same order as
+  HR's own joiner sheet (and a CSV import of that sheet now lands in the
+  right boxes). Both figures are required; a basic at or above the
+  take-home is refused as "looks swapped". A Status column shows
+  "saved", "not saved yet", "type BOTH figures" or "looks swapped".
+- CHANGED: full-month joiners get no Basic Salary line at all - the
+  assignment pays the basic and the allowances carry the rest.
+  Part-month joiners get next month's full package seeded as drafts.
+- REMOVED from this tab: the Fix and fx buttons. Saving the tab does
+  what Fix did. Set / Correct Salary stays on Review & Approve and the
+  Take-Home Solver.
+- Payroll Guide: the two joiner cards rewritten to match.
+
 ## v1.34.2 - 2026-10-29
 
 - FIX: the Set / Correct Salary preview no longer shows a false RAISE
