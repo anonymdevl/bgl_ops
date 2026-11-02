@@ -266,7 +266,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		h += signoff_bar('Loans') + filter_box('loans');
 		h += approved_banner(['Loans'], 'loan deduction(s)');
 		h += '<h4>1. Loans - ' + label + '</h4>' +
-			'<p class="sect-note">Pre-filled with each loan\'s agreed installment, capped at the balance. Set 0 to skip this month. A loan this month\'s deduction pays off stays on this month\'s sheet, marked "clears loan" - it is not lost, and next month it drops off by itself. Repaid and Balance are as they stood before this month.</p>' +
+			'<p class="sect-note">Pre-filled with each loan\'s agreed installment, capped at the balance. Set 0 to skip this month. A loan this month\'s deduction pays off stays on this month\'s sheet, marked "clears loan" - it is not lost, and next month it drops off by itself. Repaid and Balance are as they stood before this month. Someone who has LEFT cannot be deducted through payroll - their row is locked; press Write off (or Close if they paid in cash).</p>' +
 			'<table class="dds-t" id="dds-loans"><thead><tr>' +
 			'<th class="l">Employee</th><th>Principal</th><th>Repaid</th><th>Balance</th>' +
 			'<th>Installment</th><th>Deduct this month</th><th class="l">After</th><th></th></tr></thead><tbody>';
@@ -274,14 +274,16 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			// this month's ledger repayment is the saved figure, per loan
 			var saved = (l.this_month === null || l.this_month === undefined) ? null : flt(l.this_month);
 			var val = saved !== null ? saved : Math.min(flt(l.expected_monthly) || flt(l.balance), flt(l.balance));
-			h += '<tr data-loan="' + l.name + '"><td class="l" title="' + l.name + ', taken ' + (l.date_taken || '-') + '">' + l.employee_name + '</td>' +
+			var left = l.emp_status && l.emp_status !== 'Active';
+			h += '<tr data-loan="' + l.name + '"' + (left ? ' data-left="1"' : '') + '><td class="l" title="' + l.name + ', taken ' + (l.date_taken || '-') + '">' + l.employee_name +
+				(left ? ' <span class="text-danger" style="font-size:11px">(' + l.emp_status.toLowerCase() + ')</span>' : '') + '</td>' +
 				'<td>' + fmt(l.principal) + '</td><td>' + fmt(l.total_repaid) + '</td>' +
 				'<td>' + fmt(l.balance) + '</td><td>' + fmt(l.expected_monthly) + '</td>' +
-				'<td><input type="number" min="0" step="0.01" class="dl-amt" value="' + flt(val, 2) + '" data-bal="' + flt(l.balance) + '"></td>' +
+				'<td><input type="number" min="0" step="0.01" class="dl-amt" value="' + (left ? 0 : flt(val, 2)) + '" data-bal="' + flt(l.balance) + '"' + (left ? ' disabled' : '') + '></td>' +
 				'<td class="l after"></td>' +
-				'<td>' + (l.status === 'Active'
-					? '<button class="btn btn-xs btn-default dds-settle" title="Close this loan: write off or mark fully paid">Close</button>'
-					: '') + '</td></tr>';
+				'<td>' + (left
+					? '<button class="btn btn-xs btn-danger dds-settle" data-left="1" title="Has left - payroll cannot collect this. Write it off, or mark it paid if settled in cash.">Write off</button>'
+					: '<button class="btn btn-xs btn-default dds-settle" title="Close this loan: write off or mark fully paid">Close</button>') + '</td></tr>';
 		});
 		if (!(d.loans || []).length) h += '<tr><td class="l" colspan="8">No loans to deduct this month.</td></tr>';
 		h += '<tr class="total"><td class="l">TOTAL LOANS</td><td></td><td></td><td></td><td></td><td id="tot-loans"></td><td></td><td></td></tr>';
@@ -597,6 +599,10 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			if (v > bal) { v = bal; inp.val(v); }
 			tl += v;
 			var after = bal - v;
+			if ($(this).data('left')) {
+				$(this).find('td.after').text(fmt(bal) + ' owed - has left, write off').removeClass('clears');
+				return;
+			}
 			$(this).find('td.after').text(after <= 0 && v > 0 ? fmt(0) + ' - clears loan' : fmt(after))
 				.toggleClass('clears', after <= 0 && v > 0);
 		});
@@ -685,6 +691,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 	function collect() {
 		var loans = [], advances = [], absences = [];
 		holder.find('#dds-loans tbody tr[data-loan]').each(function() {
+			if ($(this).data('left')) return;   // leavers are closed with Write off, never saved
 			loans.push({ loan: $(this).data('loan'), amount: flt($(this).find('input.dl-amt').val()) });
 		});
 		holder.find('#dds-adv tbody tr[data-emp]').each(function() {
@@ -892,7 +899,9 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			fields: [
 				{ fieldname: 'info', fieldtype: 'HTML',
 					options: '<div style="font-size:12.5px">Outstanding balance: <b>GHS ' +
-						format_number(bal, null, 2) + '</b>. Closing removes this month\u2019s planned deduction and stops payroll collecting it.</div>' },
+						format_number(bal, null, 2) + '</b>. Closing removes this month\u2019s planned deduction and stops payroll collecting it.' +
+						(tr.data('left') ? '<br><br>This person has left, so payroll cannot collect it. <b>Written Off</b> = the company absorbs the balance; <b>Fully Paid</b> = they settled it in cash.' : '') +
+						'</div>' },
 				{ fieldname: 'action', label: 'The balance becomes', fieldtype: 'Select',
 					options: 'Written Off\nFully Paid', default: 'Written Off' }
 			],
@@ -905,7 +914,7 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 						d.hide();
 						frappe.show_alert({ message: r.message.employee_name + ': loan ' + v.action.toLowerCase() +
 							' (balance GHS ' + format_number(r.message.balance, null, 2) + '). Reloading.', indicator: 'green' }, 7);
-						load();
+						load_sheet();
 					} });
 			}
 		});

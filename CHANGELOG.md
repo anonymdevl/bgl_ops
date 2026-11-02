@@ -1,3 +1,18 @@
+## v1.35.2 - 2026-11-02
+
+Loans owed by people who have left can be written off from the Loans tab.
+
+- FIX: a leaver's loan row is marked (left/inactive), its deduction box is
+  locked at 0 and a red "Write off" button closes it - Written Off (the
+  company absorbs it) or Fully Paid (settled in cash). Before, v1.35.1
+  hid Close on any loan not Active, and Seidu Adams' loan read "Fully
+  Paid" from a pre-v1.35.1 save that booked an October repayment payroll
+  could never collect, so HR had no way to close it.
+- FIX: leaver rows are never sent on Save, so no repayment can be booked
+  against someone payroll cannot deduct.
+- FIX: closing a loan now reloads the sheet (it called a function that
+  does not exist, so the page sat on the old figures).
+
 ## v1.35.1 - 2026-11-02
 
 Loans tab: a loan that this month's deduction pays off no longer vanishes.

@@ -568,6 +568,8 @@ def deduction_sheet(month):
     loans = _q(
         """select l.name, l.employee, l.employee_name, l.loan_type,
                   l.principal, l.status, l.date_taken,
+                  (select e.status from `tabEmployee` e
+                    where e.name=l.employee) emp_status,
                   ifnull(l.expected_monthly,0) expected_monthly,
                   ifnull((select sum(r.amount) from `tabStaff Loan Repayment` r
                           where r.parent=l.name
