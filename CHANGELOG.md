@@ -1,3 +1,29 @@
+## v1.35.1 - 2026-11-02
+
+Loans tab: a loan that this month's deduction pays off no longer vanishes.
+HR could not see Godwin Akati's clearing loan and re-entered it five times.
+
+- FIX: a loan this month clears stays on this month's sheet, marked
+  "clears loan", and can still be edited. Before, the sheet listed Active
+  loans only, so the save that cleared a loan also hid it.
+- FIX: Repaid and Balance show the position BEFORE this month, and the
+  "Deduct this month" box shows that loan's own saved repayment. Before,
+  a reload showed the balance already reduced, and an employee with two
+  loans showed the same figure on both rows.
+- FIX: one employee with several loans gets ONE Loans deduction for the
+  total. Before, each loan overwrote the same draft, so payroll took only
+  the last loan's installment while the ledger recorded all of them.
+- FIX: the loan ledger is no longer changed when that month's Loans
+  deduction is already approved (or the employee has left), so the
+  ledger and payroll cannot drift apart. Closing a loan whose deduction
+  is approved is refused with a plain message.
+- FIX: a loan taken after the month-end does not appear on that month's
+  sheet; its first installment waits for its own month.
+- FIX: Close on one of an employee's loans rewrites their Loans deduction
+  for the remaining loans instead of deleting it.
+- CHANGED: "+ Add loan" warns when the employee already has a loan on the
+  sheet, and when the installment is the whole principal.
+
 ## v1.35.0 - 2026-10-30
 
 The New Hire Pro-Ration tab, rebuilt around the two figures HR actually

@@ -266,21 +266,24 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 		h += signoff_bar('Loans') + filter_box('loans');
 		h += approved_banner(['Loans'], 'loan deduction(s)');
 		h += '<h4>1. Loans - ' + label + '</h4>' +
-			'<p class="sect-note">Pre-filled with each loan\'s agreed installment, capped at the balance. Set 0 to skip this month.</p>' +
+			'<p class="sect-note">Pre-filled with each loan\'s agreed installment, capped at the balance. Set 0 to skip this month. A loan this month\'s deduction pays off stays on this month\'s sheet, marked "clears loan" - it is not lost, and next month it drops off by itself. Repaid and Balance are as they stood before this month.</p>' +
 			'<table class="dds-t" id="dds-loans"><thead><tr>' +
 			'<th class="l">Employee</th><th>Principal</th><th>Repaid</th><th>Balance</th>' +
 			'<th>Installment</th><th>Deduct this month</th><th class="l">After</th><th></th></tr></thead><tbody>';
 		(d.loans || []).forEach(function(l) {
-			var saved = draft_amount('Loans', l.employee);
+			// this month's ledger repayment is the saved figure, per loan
+			var saved = (l.this_month === null || l.this_month === undefined) ? null : flt(l.this_month);
 			var val = saved !== null ? saved : Math.min(flt(l.expected_monthly) || flt(l.balance), flt(l.balance));
-			h += '<tr data-loan="' + l.name + '"><td class="l">' + l.employee_name + '</td>' +
+			h += '<tr data-loan="' + l.name + '"><td class="l" title="' + l.name + ', taken ' + (l.date_taken || '-') + '">' + l.employee_name + '</td>' +
 				'<td>' + fmt(l.principal) + '</td><td>' + fmt(l.total_repaid) + '</td>' +
 				'<td>' + fmt(l.balance) + '</td><td>' + fmt(l.expected_monthly) + '</td>' +
 				'<td><input type="number" min="0" step="0.01" class="dl-amt" value="' + flt(val, 2) + '" data-bal="' + flt(l.balance) + '"></td>' +
 				'<td class="l after"></td>' +
-				'<td><button class="btn btn-xs btn-default dds-settle" title="Close this loan: write off or mark fully paid">Close</button></td></tr>';
+				'<td>' + (l.status === 'Active'
+					? '<button class="btn btn-xs btn-default dds-settle" title="Close this loan: write off or mark fully paid">Close</button>'
+					: '') + '</td></tr>';
 		});
-		if (!(d.loans || []).length) h += '<tr><td class="l" colspan="8">No active loans in the ledger.</td></tr>';
+		if (!(d.loans || []).length) h += '<tr><td class="l" colspan="8">No loans to deduct this month.</td></tr>';
 		h += '<tr class="total"><td class="l">TOTAL LOANS</td><td></td><td></td><td></td><td></td><td id="tot-loans"></td><td></td><td></td></tr>';
 		h += '</tbody></table>';
 		h += '<button class="btn btn-xs btn-default dds-add" id="add-loan">+ Add loan / advance</button>';
@@ -531,17 +534,36 @@ frappe.pages['deduction-sheet'].on_page_load = function(wrapper) {
 			{ fieldname: 'date_taken', label: 'Date taken', fieldtype: 'Date', default: frappe.datetime.get_today() },
 			{ fieldname: 'reason', label: 'Reason', fieldtype: 'Small Text' }
 		], function(v) {
-			frappe.call({
-				method: 'bgl_ops.api.loan_create',
-				args: { employee: v.emp.split(':')[0].trim(), principal: v.principal,
-					expected_monthly: v.expected_monthly, loan_type: v.loan_type,
-					date_taken: v.date_taken, reason: v.reason },
-				freeze: true,
-				callback: function(r) {
-					frappe.show_alert({ message: 'Loan ' + r.message.name + ' recorded for ' + r.message.employee_name + '. Next: its installment now appears on this sheet - adjust if needed, then Save Prep Sheet.', indicator: 'green' });
-					load_sheet();
-				}
-			});
+			var emp = v.emp.split(':')[0].trim();
+			var later = v.date_taken && v.date_taken > d.month_end;
+			var create = function() {
+				frappe.call({
+					method: 'bgl_ops.api.loan_create',
+					args: { employee: emp, principal: v.principal,
+						expected_monthly: v.expected_monthly, loan_type: v.loan_type,
+						date_taken: v.date_taken, reason: v.reason },
+					freeze: true,
+					callback: function(r) {
+						frappe.show_alert({ message: 'Loan ' + r.message.name + ' recorded for ' + r.message.employee_name + '. ' +
+							(later ? 'It was taken after ' + state.month + ', so its first installment appears on that later month\'s sheet, not this one.'
+								: 'Next: its installment now appears on this sheet - adjust if needed, then Save Prep Sheet.'),
+							indicator: 'green' }, 10);
+						load_sheet();
+					}
+				});
+			};
+			// The usual reason for a "new" loan is not seeing an old one.
+			// Point at it before a duplicate goes into the ledger.
+			var mine = (d.loans || []).filter(function(l) { return l.employee === emp; });
+			var warn = [];
+			if (mine.length) warn.push(mine[0].employee_name + ' already has ' + mine.length + ' loan(s) on this sheet (' +
+				mine.map(function(l) { return l.name + ': balance ' + fmt(l.balance); }).join('; ') +
+				'). Only create another if this is genuinely a NEW loan.');
+			if (!flt(v.expected_monthly) || flt(v.expected_monthly) >= flt(v.principal))
+				warn.push('No installment below the principal was given, so the WHOLE ' + fmt(v.principal) +
+					' comes off in one month.');
+			if (!warn.length) { create(); return; }
+			frappe.confirm(warn.join('<br><br>') + '<br><br><b>Create the loan anyway?</b>', create);
 		}, 'Record a new loan / advance', 'Create');
 	}
 

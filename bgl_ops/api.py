@@ -559,13 +559,39 @@ def deduction_sheet(month):
     m_end = _month_end(month)
     prev_end = _prev_month_end(month)
 
+    # Repaid / balance are as they stood BEFORE this month's deduction, and
+    # a loan this month clears stays on this month's sheet. Before v1.35.1
+    # the sheet listed Active loans only, so saving a clearing installment
+    # made the loan vanish - HR re-entered Godwin's five times. A loan
+    # taken after month-end waits for its own month.
+    ref = f"PAYROLL-{month}"
     loans = _q(
-        """select name, employee, employee_name, loan_type, principal,
-                  ifnull(total_repaid,0) total_repaid, ifnull(balance,0) balance,
-                  ifnull(expected_monthly,0) expected_monthly
-           from `tabStaff Loan Advance`
-           where status='Active' and loan_type != 'Salary Advance'
-           order by employee_name""")
+        """select l.name, l.employee, l.employee_name, l.loan_type,
+                  l.principal, l.status, l.date_taken,
+                  ifnull(l.expected_monthly,0) expected_monthly,
+                  ifnull((select sum(r.amount) from `tabStaff Loan Repayment` r
+                          where r.parent=l.name
+                            and r.parenttype='Staff Loan Advance'
+                            and ifnull(r.reference,'') != %(ref)s
+                            and (r.payment_date is null
+                                 or r.payment_date <= %(end)s)), 0) total_repaid,
+                  (select sum(r.amount) from `tabStaff Loan Repayment` r
+                    where r.parent=l.name
+                      and r.parenttype='Staff Loan Advance'
+                      and r.reference=%(ref)s) this_month
+           from `tabStaff Loan Advance` l
+           where l.loan_type != 'Salary Advance'
+             and (l.date_taken is null or l.date_taken <= %(end)s)
+             and (l.status='Active'
+                  or (l.status='Fully Paid' and exists (
+                        select 1 from `tabStaff Loan Repayment` r
+                        where r.parent=l.name
+                          and r.parenttype='Staff Loan Advance'
+                          and r.reference=%(ref)s)))
+           order by l.employee_name, l.date_taken, l.name""",
+        {"ref": ref, "end": m_end})
+    for l in loans:
+        l.balance = flt(l.principal) - flt(l.total_repaid)
 
     # Current month's saved drafts (so reloading shows what was entered).
     # Part-month pro-rations also live in the Absent component, but they
@@ -767,6 +793,39 @@ def deduction_sheet(month):
             "ot_locked": ot_locked}
 
 
+def _loan_draft_block(employee, m_end):
+    """Why this employee's 'Loans' deduction cannot be written this month
+    ('inactive' / 'submitted'), or None when it can."""
+    if frappe.db.get_value("Employee", employee, "status") != "Active":
+        return "inactive"
+    if frappe.db.exists("Additional Salary",
+            {"employee": employee, "salary_component": "Loans",
+             "payroll_date": m_end, "docstatus": 1}):
+        return "submitted"
+    return None
+
+
+def _sync_loan_draft(employee, month):
+    """Rewrite the employee's one draft 'Loans' deduction from the ledger:
+    the sum of this month's repayments across all their loans."""
+    ref = f"PAYROLL-{month}"
+    rows = _q(
+        """select l.name, sum(r.amount) amount
+           from `tabStaff Loan Advance` l
+           join `tabStaff Loan Repayment` r
+             on r.parent=l.name and r.parenttype='Staff Loan Advance'
+           where l.employee=%(e)s and r.reference=%(ref)s
+           group by l.name order by l.name""",
+        {"e": employee, "ref": ref})
+    total = flt(sum(flt(r.amount) for r in rows), 2)
+    mon = int(month[5:7])
+    label = f"{calendar.month_name[mon]} {month[:4]}"
+    names = ", ".join(r.name for r in rows)
+    return _upsert_deduction_draft(
+        employee, "Loans", total, _month_end(month),
+        f"Loan installment {label} ({names}) via deduction sheet")
+
+
 def _upsert_deduction_draft(employee, component, amount, m_end, remark,
                             overwrite=0):
     """Create/update/delete ONE draft Additional Salary. Returns action.
@@ -875,42 +934,69 @@ def deduction_save(month, loans=None, advances=None, absences=None,
             f"{nm} - {what} already submitted, left untouched")
 
 
+    # Loans are grouped per employee: their one 'Loans' deduction carries
+    # the SUM of their loans' installments (before v1.35.1 each loan row
+    # overwrote the same draft, so a second loan replaced the first). The
+    # ledger is only touched when that deduction can still be written -
+    # a ledger repayment with no matching payroll line is a mismatch.
+    by_emp = {}
     for row in loans:
         try:
             doc = frappe.get_doc("Staff Loan Advance", row.get("loan"))
-            amount = flt(row.get("amount") or 0)
-            other = sum(flt(r.amount) for r in doc.repayments if r.reference != ref)
-            room = flt(doc.principal) - other
-            if amount > room:
-                amount = room  # never deduct past the balance
-            mine = [r for r in doc.repayments if r.reference == ref]
-            if amount <= 0:
-                for r in mine:
-                    doc.repayments.remove(r)
-            elif mine:
-                mine[0].amount = amount
-                mine[0].payment_date = m_end
-            else:
-                doc.append("repayments", {
-                    "payment_date": m_end, "amount": amount,
-                    "source": "Payroll Deduction", "reference": ref,
-                    "remarks": f"Deduction sheet {month_label}"})
-            doc.total_repaid = sum(flt(r.amount) for r in doc.repayments)
-            doc.balance = flt(doc.principal) - flt(doc.total_repaid)
-            if doc.balance <= 0:
-                doc.status = "Fully Paid"
-                out["cleared"].append(doc.employee_name)
-            elif doc.status == "Fully Paid":
-                doc.status = "Active"
-            doc.save()
-            note_skip(_upsert_deduction_draft(
-                doc.employee, "Loans", amount, m_end,
-                f"Loan installment {month_label} ({doc.name}) via deduction sheet"),
-                doc.employee, "loan installment")
-            if amount > 0:
-                out["loans"] += 1
         except Exception as ex:
             out["errors"].append(f"Loan {row.get('loan')}: {ex}")
+            continue
+        by_emp.setdefault(doc.employee, []).append(
+            (doc, flt(row.get("amount") or 0)))
+    for employee, items in by_emp.items():
+        block = _loan_draft_block(employee, m_end)
+        if block == "submitted":
+            approved = flt(frappe.db.get_value("Additional Salary",
+                {"employee": employee, "salary_component": "Loans",
+                 "payroll_date": m_end, "docstatus": 1}, "amount"))
+            if abs(approved - sum(a for _, a in items)) >= 0.005:
+                note_skip("submitted", employee, "loan installment")
+            continue
+        if block:
+            note_skip(block, employee, "loan installment")
+            continue
+        for doc, amount in items:
+            try:
+                other = sum(flt(r.amount) for r in doc.repayments
+                            if r.reference != ref)
+                room = flt(doc.principal) - other
+                if amount > room:
+                    amount = room  # never deduct past the balance
+                mine = [r for r in doc.repayments if r.reference == ref]
+                if amount <= 0:
+                    for r in mine:
+                        doc.repayments.remove(r)
+                elif mine:
+                    mine[0].amount = amount
+                    mine[0].payment_date = m_end
+                else:
+                    doc.append("repayments", {
+                        "payment_date": m_end, "amount": amount,
+                        "source": "Payroll Deduction", "reference": ref,
+                        "remarks": f"Deduction sheet {month_label}"})
+                doc.total_repaid = sum(flt(r.amount) for r in doc.repayments)
+                doc.balance = flt(doc.principal) - flt(doc.total_repaid)
+                if doc.balance <= 0:
+                    if doc.status != "Fully Paid":
+                        out["cleared"].append(doc.employee_name)
+                    doc.status = "Fully Paid"
+                elif doc.status == "Fully Paid":
+                    doc.status = "Active"
+                doc.save()
+                if amount > 0:
+                    out["loans"] += 1
+            except Exception as ex:
+                out["errors"].append(f"Loan {doc.name}: {ex}")
+        try:
+            note_skip(_sync_loan_draft(employee, month), employee,
+                      "loan installment")
+        except Exception as ex:
+            out["errors"].append(f"Loans deduction {employee}: {ex}")
 
     for row in advances:
         try:
@@ -3340,22 +3426,20 @@ def settle_loan(loan, action, month=None):
         frappe.throw('Action must be Written Off or Fully Paid.')
     doc = frappe.get_doc('Staff Loan Advance', loan)
     made = []
+    planned = False
     if month:
         ref = f"PAYROLL-{month}"
-        m_start, m_end = _month_bounds(month)
+        planned = any(r.reference == ref for r in doc.repayments)
+        if planned and _loan_draft_block(doc.employee, _month_end(month)) \
+                == 'submitted':
+            frappe.throw("This month's Loans deduction for %s is already "
+                         "approved. Reopen it first, then close the loan."
+                         % doc.employee_name)
         for r in list(doc.repayments):
             if r.reference == ref:
                 doc.repayments.remove(r)
                 made.append('removed this month\'s planned repayment %s'
                             % flt(r.amount, 2))
-        for name in frappe.get_all('Additional Salary',
-                filters={'employee': doc.employee, 'salary_component': 'Loans',
-                         'docstatus': 0,
-                         'payroll_date': ['between', [m_start, m_end]],
-                         'custom_bgl_note': ['like', f'%{doc.name}%']},
-                pluck='name'):
-            frappe.delete_doc('Additional Salary', name, force=1)
-            made.append('deleted draft deduction ' + name)
     doc.total_repaid = sum(flt(r.amount) for r in doc.repayments)
     doc.balance = flt(doc.principal) - flt(doc.total_repaid)
     bal = flt(doc.balance, 2)
@@ -3365,6 +3449,10 @@ def settle_loan(loan, action, month=None):
         % (action, today(), bal)
     doc.save()
     made.append('status -> %s (balance %s)' % (action, bal))
+    if planned:
+        # the employee's one Loans deduction now carries only their other
+        # loans (before v1.35.1 the whole draft was deleted, dropping them)
+        made.append('Loans deduction ' + _sync_loan_draft(doc.employee, month))
     return {'employee_name': doc.employee_name, 'balance': bal, 'made': made}
 
 
