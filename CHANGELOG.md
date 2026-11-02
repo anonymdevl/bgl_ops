@@ -1,3 +1,13 @@
+## v1.35.3 - 2026-11-02
+
+- FIX: Payroll Readiness no longer reports joiners as "pending" when they
+  were saved on the Pro-Ration tab. It looked for a Basic Salary line,
+  which since v1.35 a joiner from the 1st does not have (the salary
+  assignment pays the basic), so October showed Samed, Peace, Bismark
+  and Pecku as pending although all four were correct. A Basic Salary
+  line still counts, for months saved before v1.35.
+- CHANGED: the pending list says "and N more" when over four names.
+
 ## v1.35.2 - 2026-11-02
 
 Loans owed by people who have left can be written off from the Loans tab.

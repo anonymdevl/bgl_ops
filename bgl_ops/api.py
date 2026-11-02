@@ -1549,7 +1549,13 @@ def payroll_readiness(month):
         """select name, employee_name from `tabEmployee`
            where status='Active' and date_of_joining between %(f)s and %(t)s""",
         {"f": f"{month}-01", "t": m_end})
-    unhandled = [h.employee_name for h in hires if not frappe.db.exists(
+    # Handled = saved on the Pro-Ration tab. Since v1.35 a joiner from the
+    # 1st has NO Basic Salary line (the assignment pays the basic), so the
+    # line alone flagged Samed, Peace, Bismark and Pecku as pending; the
+    # line still counts for months saved before v1.35.
+    saved_nh = _join_figures(month)
+    unhandled = [h.employee_name for h in hires
+                 if h.name not in saved_nh and not frappe.db.exists(
         "Additional Salary", {"employee": h.name, "payroll_date": m_end,
                               "salary_component": "Basic Salary",
                               "docstatus": ("<", 2)})]
@@ -1557,7 +1563,8 @@ def payroll_readiness(month):
          len(unhandled) == 0,
          ("no joiners this month" if not hires else
           (f"all {len(hires)} handled" if not unhandled else
-           f"{len(unhandled)} pending: " + ", ".join(unhandled[:4]))),
+           f"{len(unhandled)} pending: " + ", ".join(unhandled[:4])
+           + (f" and {len(unhandled) - 4} more" if len(unhandled) > 4 else ""))),
          "/app/deduction-sheet", warn=(not hires))
 
     # 3b. joining-date sanity: employees created this month, DOJ elsewhere
