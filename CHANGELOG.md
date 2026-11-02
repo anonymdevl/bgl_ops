@@ -1,3 +1,24 @@
+## v1.35.4 - 2026-11-02
+
+October's payroll run failed silently: "Income Tax Slab: PAYE - 2026 is
+disabled". Three salary assignments still used the old tax table and
+ERPNext stops the whole run at the first slip it cannot build.
+
+- FIX: every salary assignment the app creates (Pro-Ration, Basic
+  Salaries, Take-Home Solver, joiner figures, part-month pro-ration) now
+  takes the tax table in force on its start date. It no longer copies the
+  table from the employee's previous assignment, which is how the disabled
+  'PAYE - 2026' got onto Samed's and Peace's October assignments.
+- NEW: Create Payroll first checks every active employee's salary
+  assignment and refuses by name if any uses a disabled or missing tax
+  table, instead of starting a run that cannot finish.
+- NEW: if slip creation does fail, Review & Approve shows a red box with
+  ERPNext's reason, the people whose assignments caused it, and a
+  Try again button (retry_payroll_slips). Before, the page kept showing
+  "creating" with no button, for ever.
+- NEW: if no slip appears 15 minutes after a run was queued, the page says
+  the background job is not running and not to create another payroll.
+
 ## v1.35.3 - 2026-11-02
 
 - FIX: Payroll Readiness no longer reports joiners as "pending" when they

@@ -729,6 +729,21 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 						st.anomalies.slice(0, 15).join('<br>') + '</div>';
 				}
 				h += '</div>';
+				// v1.35.4: a failed run used to look like "creating" for ever
+				if (st.phase === 'failed') {
+					watch_until = 0;
+					h += '<div class="rvb-warn"><b>Creating the salary slips FAILED - no slips were made.</b><br>' +
+						'Reason given by ERPNext: ' + frappe.utils.escape_html(st.failure || '') +
+						((st.blockers || []).length
+							? '<br><br><b>Found the cause:</b><br>' + st.blockers.slice(0, 15).map(frappe.utils.escape_html).join('<br>') +
+								'<br><br>Fix the salary assignment(s) above (or ask Powersoft), then press Try again.'
+							: '<br><br>Send this message to Powersoft, then press Try again once it is fixed.') +
+						'</div>' + btn('rvb-retry', 'Try again', false);
+				}
+				if (st.phase === 'creating' && st.stalled) {
+					h += '<div class="rvb-warn"><b>No slips after 15 minutes.</b> The background job that writes them ' +
+						'does not seem to be running. Tell Powersoft - do not create another payroll.</div>';
+				}
 				if (st.phase === 'creating') {
 					var pct = st.expected ? Math.min(100, Math.round(st.created * 100 / st.expected)) : 0;
 					var stages = ['Reading salary structures...', 'Applying trips and cubic...',
@@ -790,6 +805,16 @@ frappe.pages['review-board'].on_page_load = function(wrapper) {
 				box.data('cheered', 1);
 				frappe.show_alert({ message: 'Payroll submitted. ' + st.submitted + ' people are getting paid.', indicator: 'green' }, 8);
 			}
+			box.find('#rvb-retry').on('click', function() {
+				frappe.call({ method: 'bgl_ops.api.retry_payroll_slips',
+					args: { month: state.month }, freeze: true,
+					freeze_message: 'Starting slip creation again...',
+					callback: function() {
+						frappe.show_alert({ message: 'Slip creation restarted.', indicator: 'blue' }, 5);
+						start_watch();
+					}
+				});
+			});
 			box.find('#rvb-run').on('click', function() {
 				function go(confirmed) {
 					frappe.call({ method: 'bgl_ops.api.run_payroll',

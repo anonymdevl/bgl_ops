@@ -2,7 +2,8 @@ import json
 import calendar
 
 import frappe
-from frappe.utils import add_days, cint, flt, get_first_day, getdate, nowdate, today
+from frappe.utils import (add_days, cint, cstr, flt, get_first_day, getdate,
+                          now_datetime, nowdate, today)
 
 PAY_GROUPS = [
     "Mixer Driver", "Pump Driver", "Pump Operator",
@@ -1098,7 +1099,8 @@ def deduction_save(month, loans=None, advances=None, absences=None,
                         "employee": emp,
                         "salary_structure": t.get("salary_structure")
                             or "Main Structure - BGL",
-                        "income_tax_slab": t.get("income_tax_slab"),
+                        "income_tax_slab": _live_tax_slab(m_start_p,
+                            t.get("income_tax_slab")),
                         "company": t.get("company")
                             or frappe.db.get_value("Employee", emp, "company"),
                         "currency": t.get("currency") or "GHS",
@@ -1203,7 +1205,7 @@ def deduction_save(month, loans=None, advances=None, absences=None,
                 "doctype": "Salary Structure Assignment",
                 "employee": emp,
                 "salary_structure": cur.salary_structure,
-                "income_tax_slab": cur.income_tax_slab,
+                "income_tax_slab": _live_tax_slab(m_start, cur.income_tax_slab),
                 "company": cur.company,
                 "currency": cur.currency or "GHS",
                 "payroll_payable_account": cur.payroll_payable_account,
@@ -2158,7 +2160,8 @@ def _payroll_entries(month):
     m_start, m_end = _month_bounds(month)
     return _q(
         """select name, docstatus, start_date, end_date, number_of_employees,
-                  branch, department, designation
+                  branch, department, designation, status, error_message,
+                  modified
            from `tabPayroll Entry`
            where start_date=%(f)s and end_date=%(t)s and docstatus < 2
            order by creation""", {"f": m_start, "t": m_end})
@@ -2202,6 +2205,14 @@ def run_payroll(month, confirm=0):
             + ".<br><br>Open the Payroll Prep Sheet, check the tab and press "
             "<b>Mark reviewed</b>. If nothing needed changing that is a fine "
             "answer - but somebody has to say so before payroll runs.")
+
+    # v1.35.4: ERPNext gives up on the whole run at the first slip it
+    # cannot build - catch the known causes here, by name, instead.
+    blockers = _slip_blockers(month, need_assignment=False)
+    if blockers:
+        frappe.throw("These people would stop every salary slip from being "
+                     "created:<br>" + "<br>".join(blockers[:15])
+                     + "<br><br>Fix their salary assignments first.")
 
     m_start, m_end = _month_bounds(month)
 
@@ -2345,8 +2356,23 @@ def payroll_status(month):
         for key, g in board["groups"].items():
             if not g["rows"]:
                 continue
-            slip_total = flt(sum(cmap.get(c, 0)
-                                 for c in _group_components(key)), 2)
+            if key == "prorations":
+                # v1.35.4: every slip carries Basic Salary from the salary
+                # structure, so compare only the prorated people's basic
+                # (October showed 15,150 vs 290,430.80 "DIFFERS")
+                emps = list({r.employee for r in g["rows"]})
+                slip_total = flt(_q(
+                    """select ifnull(sum(sd.amount),0) v
+                       from `tabSalary Detail` sd
+                       inner join `tabSalary Slip` ss on ss.name = sd.parent
+                       where ss.payroll_entry in %(pe)s and ss.docstatus < 2
+                         and ss.employee in %(emps)s
+                         and sd.salary_component in %(c)s""",
+                    {"pe": names, "emps": emps,
+                     "c": _group_components(key)})[0].v, 2)
+            else:
+                slip_total = flt(sum(cmap.get(c, 0)
+                                     for c in _group_components(key)), 2)
             recon.append({"group": g["label"], "board": g["total"],
                           "slips": slip_total,
                           "ok": abs(slip_total - flt(g["total"])) < 0.05})
@@ -2401,11 +2427,57 @@ def payroll_status(month):
         phase = "drafts_ready"
     if submitted and len(submitted) >= expected:
         phase = "submitted"
+    # v1.35.4: ERPNext marks the entry Failed and stops when one slip is
+    # refused - the board used to keep showing "creating" for ever.
+    # Say what broke and who it is, so HR is never left waiting.
+    failure, blockers, stalled = None, [], False
+    failed = [e for e in entries if e.status == "Failed"]
+    if failed and phase == "creating":
+        phase = "failed"
+        msg = " ".join(cstr(e.error_message) for e in failed)
+        failure = frappe.utils.strip_html(msg).replace(
+            "Check Error Log", " - details in Error Log").strip() \
+            or "ERPNext stopped creating salary slips without a reason."
+        emps = [r.employee for r in _q(
+            """select employee from `tabPayroll Employee Detail`
+               where parent in %(pe)s""", {"pe": [e.name for e in failed]})]
+        blockers = _slip_blockers(month, emps)
+    elif phase == "creating" and not slips and all(
+            e.status in ("Queued", "Submitted") for e in entries):
+        idle = frappe.utils.time_diff_in_seconds(
+            now_datetime(), max(e.modified for e in entries))
+        stalled = idle > 15 * 60
     return {"entries": [dict(e) for e in entries], "phase": phase,
             "expected": expected, "created": len(slips),
             "submitted": len(submitted), "recon": recon,
             "recon_ok": all(r["ok"] for r in recon) if recon else False,
-            "anomalies": anomalies}
+            "anomalies": [] if phase == "failed" else anomalies,
+            "failure": failure, "blockers": blockers, "stalled": stalled}
+
+
+@frappe.whitelist()
+def retry_payroll_slips(month):
+    """Run ERPNext's slip creation again on the month's FAILED payroll
+    entries, once whatever stopped it has been fixed. Refuses while a known
+    blocker still stands, so a retry cannot fail the same way twice."""
+    _require_access()
+    if "HR Manager" not in frappe.get_roles() and \
+            "System Manager" not in frappe.get_roles():
+        frappe.throw("Only HR Manager can run payroll", frappe.PermissionError)
+    failed = [e for e in _payroll_entries(month) if e.status == "Failed"]
+    if not failed:
+        frappe.throw("No failed payroll run for this month - nothing to retry.")
+    emps = [r.employee for r in _q(
+        """select employee from `tabPayroll Employee Detail`
+           where parent in %(pe)s""", {"pe": [e.name for e in failed]})]
+    blockers = _slip_blockers(month, emps)
+    if blockers:
+        frappe.throw("Fix these first, then try again:<br>"
+                     + "<br>".join(blockers[:15]))
+    for e in failed:
+        frappe.get_doc("Payroll Entry", e.name).create_salary_slips()
+    frappe.db.commit()
+    return {"retried": [e.name for e in failed]}
 
 
 @frappe.whitelist()
@@ -2498,6 +2570,61 @@ def _active_paye_slabs(on_date=None):
         pass  # never let a slab-read problem take the solver down
     cache[key] = (bands, top)
     return cache[key]
+
+def _live_tax_slab(on_date, fallback=None):
+    """The tax slab a NEW salary assignment must carry: the enabled, submitted
+    Income Tax Slab in force on on_date. November lesson (v1.35.4): copying
+    the slab from the employee's previous assignment carried the disabled
+    'PAYE - 2026' onto three October assignments and every slip failed."""
+    slab = frappe.get_all("Income Tax Slab",
+        filters={"docstatus": 1, "disabled": 0,
+                 "effective_from": ["<=", str(on_date or nowdate())]},
+        pluck="name", order_by="effective_from desc", limit=1)
+    return slab[0] if slab else fallback
+
+
+def _slip_blockers(month, employees=None, need_assignment=True):
+    """Plain-language reasons ERPNext would refuse to draft a salary slip,
+    per employee: no salary assignment for the month, or one pointing at a
+    disabled / missing tax slab. Checked before payroll runs and shown
+    when slip creation has failed. need_assignment=False skips people with
+    no assignment at all (ERPNext leaves them off the run by itself)."""
+    m_start, m_end = _month_bounds(month)
+    if employees is None:
+        employees = [e.name for e in _q(
+            "select name from `tabEmployee` where status='Active'")]
+    if not employees:
+        return []
+    rows = _q(
+        """select e.name employee, e.employee_name,
+                  (select concat(ssa.name, '|', ifnull(ssa.income_tax_slab, ''))
+                   from `tabSalary Structure Assignment` ssa
+                   where ssa.employee=e.name and ssa.docstatus=1
+                     and ssa.from_date <= %(t)s
+                   order by ssa.from_date desc, ssa.creation desc limit 1) cur
+           from `tabEmployee` e where e.name in %(emps)s
+           order by e.employee_name""", {"t": m_end, "emps": employees})
+    slabs = {s.name: s for s in frappe.get_all("Income Tax Slab",
+             fields=["name", "disabled", "docstatus"])}
+    out = []
+    for r in rows:
+        if not r.cur:
+            if need_assignment:
+                out.append(f"{r.employee_name}: no salary assignment "
+                           f"for {month}")
+            continue
+        ssa, slab = r.cur.split("|", 1)
+        if not slab:
+            continue  # no tax slab is allowed; ERPNext then skips PAYE
+        s = slabs.get(slab)
+        if not s or s.docstatus != 1:
+            out.append(f"{r.employee_name}: salary assignment {ssa} points "
+                       f"at tax table '{slab}', which does not exist")
+        elif s.disabled:
+            out.append(f"{r.employee_name}: salary assignment {ssa} still "
+                       f"uses the disabled tax table '{slab}'")
+    return out
+
 
 def _paye_monthly(taxable, on_date=None):
     bands, top = _active_paye_slabs(on_date)
@@ -2665,7 +2792,7 @@ def solver_apply(employee, month, basic, housing, transport, eda, note=None):
         ssa.update({'employee': employee,
                     'salary_structure': tmpl.salary_structure,
                     'from_date': m_start,
-                    'income_tax_slab': tmpl.income_tax_slab,
+                    'income_tax_slab': _live_tax_slab(m_start, tmpl.income_tax_slab),
                     'payroll_payable_account': tmpl.payroll_payable_account,
                     'company': tmpl.company, 'base': _flt(basic)})
         ssa.insert()
@@ -3038,7 +3165,7 @@ def _apply_join_month(employee, month, basic, take_home, days):
             "doctype": "Salary Structure Assignment", "employee": employee,
             "salary_structure": t.get("salary_structure")
                 or "Main Structure - BGL",
-            "income_tax_slab": t.get("income_tax_slab"),
+            "income_tax_slab": _live_tax_slab(from_date, t.get("income_tax_slab")),
             "payroll_payable_account": t.get("payroll_payable_account"),
             "company": t.get("company") or emp.company,
             "currency": t.get("currency") or "GHS",
@@ -3218,7 +3345,8 @@ def set_salary(employee, month, basic, take_home, dry_run=0):
         out['made'].append('cancelled ' + old)
     ssa = frappe.new_doc('Salary Structure Assignment')
     ssa.update({'employee': employee, 'salary_structure': tpl.salary_structure,
-                'from_date': str(from_date), 'income_tax_slab': tpl.income_tax_slab,
+                'from_date': str(from_date),
+                'income_tax_slab': _live_tax_slab(from_date, tpl.income_tax_slab),
                 'payroll_payable_account': tpl.payroll_payable_account,
                 'company': tpl.company, 'base': basic})
     ssa.insert()
